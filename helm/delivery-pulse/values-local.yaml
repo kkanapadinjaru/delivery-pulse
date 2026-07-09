@@ -1,0 +1,7 @@
+# values-local.yaml — Docker Desktop / local Kubernetes
+# Used by: deploy.sh install local
+
+ui:
+  service:
+    type: NodePort
+    nodePort: 30080

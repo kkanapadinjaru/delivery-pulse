@@ -3,6 +3,12 @@ FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
+# Install corporate CA cert for TLS inspection proxy (Zscaler)
+COPY zscaler-root-ca.crt /usr/local/share/ca-certificates/zscaler-root-ca.crt
+RUN apk --no-cache add ca-certificates && update-ca-certificates \
+    && cat /usr/local/share/ca-certificates/zscaler-root-ca.crt >> /etc/ssl/certs/ca-certificates.crt
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+
 # Copy go mod files and download dependencies
 COPY go.mod go.sum ./
 RUN go mod download
@@ -20,6 +26,6 @@ WORKDIR /app
 
 COPY --from=builder /app/bin/server .
 
-EXPOSE 8080
+EXPOSE 8090
 
 ENTRYPOINT ["./server"]

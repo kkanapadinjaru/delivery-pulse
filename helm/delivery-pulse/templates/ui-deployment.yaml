@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "delivery-pulse.fullname" . }}-ui
+  labels:
+    {{- include "delivery-pulse.ui.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.ui.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "delivery-pulse.ui.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "delivery-pulse.ui.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: ui
+          image: {{ include "delivery-pulse.image" (dict "registry" .Values.imageRegistry "repository" .Values.ui.image.repository "tag" .Values.ui.image.tag "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ .Values.ui.image.pullPolicy }}
+          env:
+            - name: API_UPSTREAM
+              value: "{{ include "delivery-pulse.fullname" . }}-server:{{ .Values.server.service.port }}"
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.ui.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.ui.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.ui.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

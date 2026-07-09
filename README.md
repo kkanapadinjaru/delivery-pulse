@@ -91,14 +91,31 @@ Settings are persisted to a `settings.json` file alongside the server binary.
 
 ## Deployment (AKS)
 
-See [helm/ado-reporter/README.md](helm/ado-reporter/README.md) for Helm chart usage.
+See [helm/delivery-pulse/README.md](helm/delivery-pulse/README.md) for full details.
+
+### Quick Start
 
 ```bash
-helm install delivery-pulse ./helm/ado-reporter \
-  --namespace your-namespace \
-  --set config.adoOrgUrl="https://dev.azure.com/your-org" \
-  --set config.adoProject="your-project" \
-  --set secrets.adoPat="your-pat"
+# Local (docker-desktop)
+./deploy.sh install local
+
+# AKS dev cluster
+./deploy.sh install dev
+
+# Dry-run (preview changes without applying)
+./deploy.sh install dev --test
+
+# Uninstall
+./deploy.sh uninstall dev
+```
+
+The `deploy.sh` script handles context switching, PAT input (securely), and install vs upgrade detection. See `./deploy.sh help` for usage.
+
+### Bash Completion
+
+```bash
+source ./deploy-completion.bash
+alias dpulse='/path/to/delivery-pulse/deploy.sh'
 ```
 
 ## API Endpoints
@@ -128,3 +145,50 @@ helm install delivery-pulse ./helm/ado-reporter \
 - **Files Changed** — Total files modified across merged PRs
 - **Actionable Comments** — Reviewer comments that resulted in code changes
 - **Rework PRs** — Work items with multiple PRs to the same repository
+
+## Authentication (Planned)
+
+Authentication is not yet implemented. The plan is to use **oauth2-proxy** as an ingress-level sidecar authenticating against **Azure AD (Entra ID)**.
+
+### Prerequisites (when ready to implement)
+1. Azure AD App Registration with:
+   - Client ID and Client Secret
+   - Redirect URI: `https://<app-domain>/oauth2/callback`
+   - API permissions: `openid`, `email`, `profile`
+2. Access to modify the AKS ingress configuration
+
+### Architecture
+```
+User → NGINX Ingress → oauth2-proxy → Azure AD login
+                                     ↓
+                              (on success)
+                                     ↓
+         App (X-Forwarded-Email header) → Allowlist check
+```
+
+### Implementation Steps
+1. **Helm chart**: Add oauth2-proxy deployment and service
+2. **Ingress annotations**: Add `auth-url` and `auth-signin` annotations pointing to oauth2-proxy
+3. **Backend middleware**: Read `X-Forwarded-Email` header, check against an admin-configured email allowlist
+4. **Admin screen**: UI to manage allowed email addresses (managers only)
+5. **Settings persistence**: Store allowed emails in `settings.json` alongside teams and work item types
+
+### Key Configuration (oauth2-proxy)
+```yaml
+# Values to configure in Helm chart
+auth:
+  enabled: false  # Set to true when App Registration is available
+  provider: azure
+  azureTenantId: "<your-tenant-id>"
+  clientId: "<app-registration-client-id>"
+  clientSecret: "<app-registration-client-secret>"
+  cookieSecret: "<random-32-byte-base64>"
+  allowedEmails: []  # Managed via admin UI
+```
+
+### How it works
+- oauth2-proxy handles Azure AD login before any request reaches the app
+- Users authenticate with their corporate Microsoft credentials (same as ADO/Teams/Outlook)
+- On successful auth, the proxy passes `X-Forwarded-Email` header to the backend
+- Backend checks the email against the managers allowlist
+- Frontend requires no changes — auth happens at the infrastructure level

@@ -34,3 +34,10 @@ docker-compose.override.yml
 
 # Helm
 charts/*.tgz
+
+# Corporate CA cert (machine-specific, not committed)
+zscaler-root-ca.crt
+**/zscaler-root-ca.crt
+
+# Deploy dry-run output
+release_manifest.yaml
