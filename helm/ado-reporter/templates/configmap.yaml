@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ado-reporter.fullname" . }}
+  labels:
+    {{- include "ado-reporter.labels" . | nindent 4 }}
+data:
+  ADO_ORG_URL: {{ .Values.config.adoOrgUrl | quote }}
+  ADO_PROJECT: {{ .Values.config.adoProject | quote }}
+  SERVER_PORT: "8080"

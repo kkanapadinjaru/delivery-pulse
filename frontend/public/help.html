@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Delivery Pulse - Metrics Help</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <style>
+    @font-face { font-family: 'Inter'; font-weight: 400; font-display: swap; src: url('/fonts/inter.woff2') format('woff2'); }
+    @font-face { font-family: 'Inter'; font-weight: 600; font-display: swap; src: url('/fonts/Inter-SemiBold.woff2') format('woff2'); }
+    @font-face { font-family: 'Inter'; font-weight: 700; font-display: swap; src: url('/fonts/Inter-SemiBold.woff2') format('woff2'); }
+    @font-face { font-family: 'Manrope'; font-weight: 600; font-display: swap; src: url('/fonts/manrope-600.woff2') format('woff2'); }
+    @font-face { font-family: 'Manrope'; font-weight: 700; font-display: swap; src: url('/fonts/manrope-600.woff2') format('woff2'); }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: #f4f6f8;
+      color: #2e3a3d;
+      line-height: 1.7;
+    }
+    header {
+      background: #206473;
+      color: white;
+      padding: 1.25rem 2rem;
+    }
+    header .content {
+      max-width: 900px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 {
+      font-family: 'Manrope', 'Inter', sans-serif;
+      font-size: 1.4rem;
+    }
+    header a {
+      color: rgba(255,255,255,0.85);
+      text-decoration: none;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    header a:hover { color: white; }
+    .container {
+      max-width: 900px;
+      margin: 2rem auto;
+      padding: 0 2rem;
+    }
+    .card {
+      background: white;
+      border-radius: 10px;
+      padding: 2rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 1px 4px rgba(46,58,61,0.08), 0 4px 16px rgba(46,58,61,0.06);
+    }
+    h2 {
+      font-family: 'Manrope', 'Inter', sans-serif;
+      color: #206473;
+      font-size: 1.3rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid #e2e8f0;
+    }
+    h3 {
+      color: #185364;
+      font-size: 1rem;
+      margin-top: 1.25rem;
+      margin-bottom: 0.4rem;
+    }
+    p { margin-bottom: 0.75rem; }
+    .metric {
+      margin-bottom: 1.5rem;
+      padding-left: 1rem;
+      border-left: 3px solid #206473;
+    }
+    .metric-name {
+      font-weight: 600;
+      color: #206473;
+      font-size: 0.95rem;
+    }
+    .metric p {
+      font-size: 0.9rem;
+      color: #475569;
+    }
+    .badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-weight: 500;
+      margin-left: 0.5rem;
+    }
+    .badge-quality { background: #e8f4f7; color: #206473; }
+    .badge-volume { background: #fff3e0; color: #e65100; }
+    .note {
+      background: #f8fafb;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 1rem;
+      font-size: 0.85rem;
+      color: #555;
+      margin-top: 1rem;
+    }
+    .note strong { color: #206473; }
+    .threshold-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin-top: 0.75rem; }
+    .threshold-table th { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 2px solid #e2e8f0; color: #206473; font-size: 0.82rem; }
+    .threshold-table td { padding: 0.4rem 0.6rem; border-bottom: 1px solid #f0f0f0; }
+    .threshold-table .indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 0.4rem; vertical-align: middle; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="content">
+      <h1>Metrics Help</h1>
+      <a href="javascript:void(0)" onclick="window.close(); return false;">Close</a>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="card">
+      <h2>Work Item Metrics</h2>
+
+      <div class="metric">
+        <p class="metric-name">Total Work Items <span class="badge badge-volume">Volume</span></p>
+        <p>Count of work items (of the configured types) that were ever assigned to the developer and had activity (state or assignment changes) within the selected date range. Uses the WIQL <code>EVER</code> operator so items are counted even if the developer is no longer the current assignee.</p>
+      </div>
+
+      <div class="metric">
+        <p class="metric-name">Completed <span class="badge badge-quality">Quality</span></p>
+        <p>Count of work items where the developer handed off the item to someone else (typically back to QA or a reviewer). This is determined by looking at the <strong>first</strong> time the AssignedTo field changed FROM the developer TO another person in the work item history. An item is considered "completed" from the developer's perspective at the point of first reassignment.</p>
+      </div>
+
+      <div class="metric">
+        <p class="metric-name">Avg Days to Complete <span class="badge badge-quality">Quality</span></p>
+        <p>Average calendar days from when the developer was <strong>first assigned</strong> a work item to when they <strong>first reassigned</strong> it away. Only the first assignment cycle is counted — if an item bounces back and forth, subsequent cycles don't inflate this number. Only items that have both an assignment and reassignment date contribute to this average.</p>
+      </div>
+
+      <div class="metric">
+        <p class="metric-name">Bounced Back <span class="badge badge-quality">Quality</span></p>
+        <p>Count of work items that were reassigned <strong>back to the developer</strong> after they had already handed them off. This indicates the reviewer or tester determined the work was incomplete or incorrect and sent it back. A higher bounce-back count suggests quality issues in the initial delivery.</p>
+        <p>This is NOT based on work item state changes (e.g., Resolved to Active). It specifically tracks assignment changes where the developer receives the item again after previously giving it away.</p>
+      </div>
+
+      <div class="metric">
+        <p class="metric-name">Reopen Rate Thresholds <span class="badge badge-quality">Quality</span></p>
+        <p>The reopen rate is the percentage of work items that bounced back out of total items worked. The quality badge uses these thresholds:</p>
+        <table class="threshold-table">
+          <thead>
+            <tr><th>Rating</th><th>Threshold</th><th>Meaning</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="indicator" style="background:#0f9d58"></span> Excellent</td><td>0%</td><td>No items bounced back at all</td></tr>
+            <tr><td><span class="indicator" style="background:#4caf50"></span> Good</td><td>1–10%</td><td>Low bounce-back rate, acceptable quality</td></tr>
+            <tr><td><span class="indicator" style="background:#ff9800"></span> Needs Improvement</td><td>11–25%</td><td>Moderate rate, work may be incomplete</td></tr>
+            <tr><td><span class="indicator" style="background:#f44336"></span> Concerning</td><td>&gt; 25%</td><td>High rate, significant quality issues</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="metric">
+        <p class="metric-name">Priority 1 / Priority 2 <span class="badge badge-volume">Volume</span></p>
+        <p>Breakdown of work items by priority level, where priority is set on the item.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Pull Request Metrics</h2>
+
+      <div class="metric">
+        <p class="metric-name">PRs Merged <span class="badge badge-volume">Volume</span></p>
+        <p>Total pull requests created by the developer in the selected date range that were successfully completed (merged into target branch). Includes PRs across all repositories in the project.</p>
+      </div>
+
+      <div class="metric">
+        <p class="metric-name">Total Commits <span class="badge badge-volume">Volume</span></p>
+        <p>Sum of all commits across all PRs raised by the developer in the date range. This represents the total code change volume.</p>
+      </div>
+
+      <div class="metric">
+        <p class="metric-name">Avg PR Cycle (days) <span class="badge badge-quality">Quality</span></p>
+        <p>Average calendar days from PR creation to PR completion (merge). Only completed PRs contribute to this metric. A shorter cycle indicates faster code review turnaround. Very short cycles (under a few hours) may indicate PRs merged without thorough review.</p>
+      </div>
+
+      <div class="metric">
+        <p class="metric-name">Files Changed <span class="badge badge-volume">Volume</span></p>
+        <p>Total number of files modified across all merged PRs. Calculated from the final iteration of each PR (representing the net diff against the target branch). Gives a sense of the breadth of code changes.</p>
+      </div>
+
+      <div class="metric">
+        <p class="metric-name">Actionable Comments <span class="badge badge-quality">Quality</span></p>
+        <p>Count of reviewer comments on PRs that were followed by subsequent code pushes. The logic:</p>
+        <p>1. A comment thread is initiated by someone other than the PR author (reviewer feedback).<br/>
+           2. The comment was left on an iteration (push) that is NOT the final iteration — meaning new code was pushed after the comment.<br/>
+           3. This indicates the developer had to make code changes to address the feedback.</p>
+        <p>A higher count suggests more reviewer feedback required code changes, which may indicate either thorough reviews or code that needed more revision before merge.</p>
+      </div>
+
+      <div class="metric">
+        <p class="metric-name">Rework PRs <span class="badge badge-quality">Quality</span></p>
+        <p>Identifies work items that have multiple pull requests to the <strong>same repository</strong>. This is a quality signal — it often means the initial PR didn't fully address the requirement, or the fix needed follow-up corrections in the same codebase.</p>
+        <p>A work item having PRs across <em>different</em> repositories is expected (e.g., frontend + backend changes) and is not flagged. Only same-repo duplicates are counted as potential rework.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Details Grid</h2>
+      <p>The collapsible details section shows individual work items with their linked PRs. The "Linked PR" column maps PRs to work items using Azure DevOps' built-in PR-to-work-item linking (typically done via commit messages referencing #WorkItemID or manual linking in the PR).</p>
+      <p>PRs that aren't linked to any work item in the current result set are shown in a separate "Unlinked PRs" sub-table.</p>
+
+      <div class="note">
+        <strong>Note on data sources:</strong> Work items are queried using WIQL with the <code>EVER</code> operator on AssignedTo, which finds items regardless of current assignee. The work item types included are configurable via Settings. PR data comes from the Azure DevOps Git API filtered by creator identity and date range. The correlation between PRs and work items depends on teams properly linking PRs to work items in Azure DevOps.
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>How This Helps Assess Delivery Quality</h2>
+      <p><strong>Developer throughput:</strong> Total Work Items + PRs Merged give a volume picture of how much work the developer is processing.</p>
+      <p><strong>Completion quality:</strong> Bounced Back count and Actionable Comments indicate whether work is complete on the first attempt or requires rework.</p>
+      <p><strong>Responsiveness:</strong> Avg Days to Complete shows how quickly items are addressed once assigned. Avg PR Cycle shows how fast code moves from review to merge.</p>
+      <p><strong>Code review engagement:</strong> Actionable Comments shows how much reviewer feedback translates to actual code changes, indicating review effectiveness.</p>
+    </div>
+  </div>
+</body>
+</html>
