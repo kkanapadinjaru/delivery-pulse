@@ -1,0 +1,92 @@
+# Default values for delivery-pulse
+
+# -- Container registry for images
+imageRegistry: "solvassharedservicesacr.azurecr.io"
+
+# Server (Go backend) configuration
+server:
+  replicaCount: 1
+  image:
+    repository: solvas-pulse-server
+    # tag: ""  — defaults to Chart.AppVersion (e.g., "1.0.0"). Override to pin a specific version.
+    tag: ""
+    pullPolicy: IfNotPresent
+  # Port the Go server listens on inside the container
+  containerPort: 8090
+  service:
+    type: ClusterIP
+    port: 8090
+    annotations: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  livenessProbe:
+    httpGet:
+      path: /api/health
+      port: 8090
+    initialDelaySeconds: 10
+    periodSeconds: 30
+  readinessProbe:
+    httpGet:
+      path: /api/health
+      port: 8090
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+# UI (Svelte frontend) configuration
+ui:
+  replicaCount: 1
+  image:
+    repository: solvas-pulse-ui
+    # tag: ""  — defaults to Chart.AppVersion (e.g., "1.0.0"). Override to pin a specific version.
+    tag: ""
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 80
+    annotations: {}
+    # For LoadBalancer with static IP (AKS manual App Gateway mode):
+    #   service.beta.kubernetes.io/azure-load-balancer-ipv4: "<reserved-ip>"
+    #   service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+    # nodePort: 30080  # Used in local mode
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  livenessProbe:
+    httpGet:
+      path: /
+      port: 80
+    initialDelaySeconds: 5
+    periodSeconds: 30
+  readinessProbe:
+    httpGet:
+      path: /
+      port: 80
+    initialDelaySeconds: 3
+    periodSeconds: 10
+
+# Azure DevOps configuration
+config:
+  adoOrgUrl: "https://dev.azure.com/solvas"
+  adoProject: "Solvas"
+  adoTeams: "AssetMgmt Conversion"
+
+# Secrets (passed via --set-file in deploy script, never in plain text)
+secrets:
+  adoPat: ""
+
+# Image pull secrets (for private registries)
+imagePullSecrets: []
+
+# Pod-level settings
+nodeSelector: {}
+tolerations: []
+affinity: {}

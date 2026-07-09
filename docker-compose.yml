@@ -1,0 +1,28 @@
+version: "3.8"
+
+services:
+  delivery-pulse-server:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8090:8090"
+    environment:
+      - ADO_ORG_URL=${ADO_ORG_URL}
+      - ADO_PAT=${ADO_PAT}
+      - ADO_PROJECT=${ADO_PROJECT}
+      - ADO_TEAMS=${ADO_TEAMS}
+      - SERVER_PORT=8090
+    restart: unless-stopped
+
+  delivery-pulse-ui:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5180:80"
+    environment:
+      - API_UPSTREAM=delivery-pulse-server:8090
+    depends_on:
+      - delivery-pulse-server
+    restart: unless-stopped
