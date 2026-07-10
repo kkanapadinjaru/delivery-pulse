@@ -10,10 +10,22 @@ import (
 type Settings struct {
 	Teams         []string `json:"teams"`
 	WorkItemTypes []string `json:"workItemTypes"`
+	AreaPaths     []string `json:"areaPaths"`
+	Activities    []string `json:"activities"`
 }
 
 // DefaultWorkItemTypes is the default set of work item types to query.
 var DefaultWorkItemTypes = []string{"Bug", "Task"}
+
+// DefaultAreaPaths is the default set of area paths to scope work items to.
+var DefaultAreaPaths = []string{
+	`Solvas\AssetMgmt\Compliance\Fabric`,
+	`Solvas\AssetMgmt\Compliance\BC`,
+	`Solvas\AssetMgmt\Portfolio\Fabric`,
+}
+
+// DefaultActivities is the default set of activity types to filter by.
+var DefaultActivities = []string{"Development", "Testing", "Requirements"}
 
 // Store handles loading and saving settings from a JSON file.
 type Store struct {
@@ -30,6 +42,8 @@ func NewStore(filePath string) *Store {
 		current: Settings{
 			Teams:         []string{},
 			WorkItemTypes: DefaultWorkItemTypes,
+			AreaPaths:     DefaultAreaPaths,
+			Activities:    DefaultActivities,
 		},
 	}
 	s.load()
@@ -55,6 +69,12 @@ func (s *Store) Update(settings Settings) error {
 	if settings.WorkItemTypes == nil {
 		settings.WorkItemTypes = DefaultWorkItemTypes
 	}
+	if settings.AreaPaths == nil {
+		settings.AreaPaths = DefaultAreaPaths
+	}
+	if settings.Activities == nil {
+		settings.Activities = DefaultActivities
+	}
 
 	s.current = settings
 	return s.save()
@@ -76,6 +96,12 @@ func (s *Store) load() {
 	}
 	if loaded.WorkItemTypes != nil && len(loaded.WorkItemTypes) > 0 {
 		s.current.WorkItemTypes = loaded.WorkItemTypes
+	}
+	if loaded.AreaPaths != nil && len(loaded.AreaPaths) > 0 {
+		s.current.AreaPaths = loaded.AreaPaths
+	}
+	if loaded.Activities != nil && len(loaded.Activities) > 0 {
+		s.current.Activities = loaded.Activities
 	}
 }
 

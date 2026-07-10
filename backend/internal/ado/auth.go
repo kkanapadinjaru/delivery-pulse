@@ -47,6 +47,15 @@ func (tp *tokenProvider) getToken() (string, error) {
 	return tp.refreshToken()
 }
 
+// invalidate forces the next getToken call to acquire a fresh token.
+// Used when a 401 response indicates the current token is no longer valid.
+func (tp *tokenProvider) invalidate() {
+	tp.mu.Lock()
+	defer tp.mu.Unlock()
+	tp.accessToken = ""
+	tp.expiresAt = time.Time{}
+}
+
 // refreshToken acquires a new token from Azure AD using client credentials flow.
 func (tp *tokenProvider) refreshToken() (string, error) {
 	tp.mu.Lock()
