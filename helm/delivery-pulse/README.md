@@ -6,7 +6,7 @@ Deploys the Delivery Pulse application (developer metrics dashboard) to Kubernet
 
 - Kubernetes 1.24+
 - Helm 3.x
-- An Azure DevOps PAT with Work Items (Read) and Code (Read) scope
+- An Azure AD Service Principal with access to the Azure DevOps organization
 - Container images pushed to a registry accessible by the cluster (for AKS)
 
 ## Deployment Modes
@@ -49,7 +49,8 @@ The preferred way to deploy is via `deploy.sh` at the project root:
 
 The script:
 - Switches kubectl context automatically (`docker-desktop` for local, `aks-eus-nonprd-shared-01` for dev)
-- Prompts for the ADO PAT securely (never in shell history or process args)
+- Prompts for the SP client secret securely (never in shell history or process args)
+- Writes the secret to a temp file and passes via `--set-file` (cleaned up on exit)
 - Detects install vs upgrade automatically
 - Supports dry-run mode (`--test`)
 
@@ -61,6 +62,18 @@ source ./deploy-completion.bash
 # source /path/to/delivery-pulse/deploy-completion.bash
 # alias dpulse='/path/to/delivery-pulse/deploy.sh'
 ```
+
+## Authentication
+
+The backend authenticates to Azure DevOps using a **Service Principal** (OAuth2 client credentials flow). The token is acquired from `login.microsoftonline.com` and cached/refreshed automatically.
+
+### What goes where
+
+| Value | Type | Stored in |
+|-------|------|-----------|
+| Tenant ID | Non-secret (directory ID) | ConfigMap via `config.adoTenantId` |
+| Client ID | Non-secret (app ID) | ConfigMap via `config.adoClientId` |
+| Client Secret | Secret | K8s Secret via `secrets.adoClientSecret` (prompted at deploy time) |
 
 ## Building & Pushing Images
 
@@ -95,7 +108,9 @@ docker push solvassharedservicesacr.azurecr.io/solvas-pulse-ui:latest
 | `config.adoOrgUrl` | Azure DevOps org URL | `https://dev.azure.com/solvas` |
 | `config.adoProject` | Azure DevOps project name | `Solvas` |
 | `config.adoTeams` | Comma-separated team names | `AssetMgmt Conversion` |
-| `secrets.adoPat` | Azure DevOps PAT (via --set-file) | `""` |
+| `config.adoTenantId` | Azure AD tenant (directory) ID | `""` |
+| `config.adoClientId` | Service Principal application (client) ID | `""` |
+| `secrets.adoClientSecret` | SP client secret (via --set-file at deploy) | `""` |
 
 ## Uninstalling
 

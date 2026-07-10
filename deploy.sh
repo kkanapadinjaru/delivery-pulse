@@ -178,14 +178,14 @@ if [ ! -f "$values_file" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# PAT handling (only for real installs, never shown in terminal history)
+# Secret handling (only for real installs, never shown in terminal history)
 # ---------------------------------------------------------------------------
-pat=""
+secret_value=""
 if [ "$helm_command" == "install" ] && [ "$dry_run" == false ]; then
-  read -r -s -p "Enter your Azure DevOps PAT: " pat
+  read -r -s -p "Enter your Service Principal client secret: " secret_value
   echo
-  if [ -z "$pat" ]; then
-    echo "${col_red}Error: PAT cannot be empty.${col_nc}" >&2
+  if [ -z "$secret_value" ]; then
+    echo "${col_red}Error: Client secret cannot be empty.${col_nc}" >&2
     exit 1
   fi
 fi
@@ -217,10 +217,10 @@ else
   echo "Release '$STACK_NAME' not found — installing..."
 fi
 
-# Write PAT to a temp file (never in process args or shell history)
-patfile="$(mktemp)"
-trap 'rm -f "$patfile"' EXIT
-printf '%s' "$pat" > "$patfile"
+# Write secret to a temp file (never in process args or shell history)
+secretfile="$(mktemp)"
+trap 'rm -f "$secretfile"' EXIT
+printf '%s' "$secret_value" > "$secretfile"
 
 # Build helm args — clean and minimal, all env-specific config lives in the values file
 helm_args=(
@@ -231,9 +231,9 @@ helm_args=(
   -f "$values_file"
 )
 
-# PAT via --set-file so it never appears in process args
-if [ -s "$patfile" ]; then
-  helm_args+=(--set-file "secrets.adoPat=$patfile")
+# Secret via --set-file so it never appears in process args
+if [ -s "$secretfile" ]; then
+  helm_args+=(--set-file "secrets.adoClientSecret=$secretfile")
 fi
 
 # Dry-run mode

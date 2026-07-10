@@ -8,4 +8,6 @@ data:
   ADO_ORG_URL: {{ .Values.config.adoOrgUrl | quote }}
   ADO_PROJECT: {{ .Values.config.adoProject | quote }}
   ADO_TEAMS: {{ .Values.config.adoTeams | quote }}
+  ADO_TENANT_ID: {{ .Values.config.adoTenantId | quote }}
+  ADO_CLIENT_ID: {{ .Values.config.adoClientId | quote }}
   SERVER_PORT: {{ .Values.server.containerPort | quote }}

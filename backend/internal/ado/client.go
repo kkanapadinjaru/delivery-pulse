@@ -11,10 +11,10 @@ import (
 	"time"
 )
 
-// Client interacts with Azure DevOps REST API using a PAT.
+// Client interacts with Azure DevOps REST API using a Service Principal.
 type Client struct {
 	orgURL     string
-	pat        string
+	tokenProv  *tokenProvider
 	project    string
 	teams      []string // configured team names to load developers from
 	workItemTypes []string // configured work item types to query
@@ -28,11 +28,11 @@ type Client struct {
 	cacheMu          sync.RWMutex
 }
 
-// NewClient creates a new Azure DevOps API client.
-func NewClient(orgURL, pat, project string) *Client {
+// NewClient creates a new Azure DevOps API client authenticated via Service Principal.
+func NewClient(orgURL, tenantID, clientID, clientSecret, project string) *Client {
 	return &Client{
 		orgURL:        strings.TrimRight(orgURL, "/"),
-		pat:           pat,
+		tokenProv:     newTokenProvider(tenantID, clientID, clientSecret),
 		project:       project,
 		workItemTypes: []string{"Bug"},
 		developerIDs:  make(map[string]string),
@@ -187,7 +187,11 @@ func (c *Client) doRequest(method, url string, body io.Reader) ([]byte, error) {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	req.SetBasicAuth("", c.pat)
+	token, err := c.tokenProv.getToken()
+	if err != nil {
+		return nil, fmt.Errorf("acquiring token: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)

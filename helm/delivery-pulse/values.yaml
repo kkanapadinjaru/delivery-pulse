@@ -78,10 +78,14 @@ config:
   adoOrgUrl: "https://dev.azure.com/solvas"
   adoProject: "Solvas"
   adoTeams: "AssetMgmt Conversion"
+  # Service Principal identifiers (non-secret)
+  adoTenantId: "ad0d7321-4227-49b4-b8c9-81fcf1038281"
+  adoClientId: "62633ca8-4d86-441c-855d-88a0a2d15e5f"
 
 # Secrets (passed via --set-file in deploy script, never in plain text)
 secrets:
-  adoPat: ""
+  # Service Principal client secret
+  adoClientSecret: ""
 
 # Image pull secrets (for private registries)
 imagePullSecrets: []

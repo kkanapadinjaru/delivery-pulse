@@ -22,13 +22,18 @@ func main() {
 	_ = godotenv.Load("../../.env")
 
 	orgURL := os.Getenv("ADO_ORG_URL")
-	pat := os.Getenv("ADO_PAT")
 	project := os.Getenv("ADO_PROJECT")
 	port := os.Getenv("SERVER_PORT")
 	teamsEnv := os.Getenv("ADO_TEAMS")
+	clientID := os.Getenv("ADO_CLIENT_ID")
+	clientSecret := os.Getenv("ADO_CLIENT_SECRET")
+	tenantID := os.Getenv("ADO_TENANT_ID")
 
-	if orgURL == "" || pat == "" || project == "" {
-		log.Fatal("ADO_ORG_URL, ADO_PAT, and ADO_PROJECT environment variables are required")
+	if orgURL == "" || project == "" {
+		log.Fatal("ADO_ORG_URL and ADO_PROJECT environment variables are required")
+	}
+	if clientID == "" || clientSecret == "" || tenantID == "" {
+		log.Fatal("ADO_CLIENT_ID, ADO_CLIENT_SECRET, and ADO_TENANT_ID environment variables are required")
 	}
 
 	if port == "" {
@@ -59,7 +64,7 @@ func main() {
 		_ = store.Update(currentSettings)
 	}
 
-	client := ado.NewClient(orgURL, pat, project)
+	client := ado.NewClient(orgURL, tenantID, clientID, clientSecret, project)
 	client.SetTeams(store.Get().Teams)
 	client.SetWorkItemTypes(store.Get().WorkItemTypes)
 
@@ -67,7 +72,7 @@ func main() {
 
 	addr := fmt.Sprintf(":%s", port)
 	log.Printf("Starting server on %s", addr)
-	log.Printf("Connected to Azure DevOps: %s / %s", orgURL, project)
+	log.Printf("Connected to Azure DevOps: %s / %s (Service Principal)", orgURL, project)
 	appliedSettings := store.Get()
 	if len(appliedSettings.Teams) > 0 {
 		log.Printf("Configured teams: %s", strings.Join(appliedSettings.Teams, ", "))
