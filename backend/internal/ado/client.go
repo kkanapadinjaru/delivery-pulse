@@ -4,23 +4,32 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
+	"math"
+	"math/rand"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
-// Client interacts with Azure DevOps REST API using a PAT.
+// maxResponseSize limits the response body to 10MB to prevent OOM on malformed responses.
+const maxResponseSize = 10 * 1024 * 1024
+
+// Client interacts with Azure DevOps REST API using a Service Principal.
 type Client struct {
 	orgURL     string
-	pat        string
+	tokenProv  *tokenProvider
 	project    string
 	teams      []string // configured team names to load developers from
 	workItemTypes []string // configured work item types to query
+	areaPaths     []string // configured area paths to scope work items
+	activities    []string // configured activity types to filter by
 	// developerIDs maps uniqueName (email) to their ADO identity GUID
 	developerIDs map[string]string
 	httpClient   *http.Client
+	logger       *slog.Logger
 
 	// Developer cache
 	cachedDevelopers []string
@@ -28,14 +37,15 @@ type Client struct {
 	cacheMu          sync.RWMutex
 }
 
-// NewClient creates a new Azure DevOps API client.
-func NewClient(orgURL, pat, project string) *Client {
+// NewClient creates a new Azure DevOps API client authenticated via Service Principal.
+func NewClient(orgURL, tenantID, clientID, clientSecret, project string, logger *slog.Logger) *Client {
 	return &Client{
 		orgURL:        strings.TrimRight(orgURL, "/"),
-		pat:           pat,
+		tokenProv:     newTokenProvider(tenantID, clientID, clientSecret),
 		project:       project,
 		workItemTypes: []string{"Bug"},
 		developerIDs:  make(map[string]string),
+		logger:        logger.With("component", "ado-client"),
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -66,6 +76,18 @@ func (c *Client) SetWorkItemTypes(types []string) {
 	} else {
 		c.workItemTypes = types
 	}
+}
+
+// SetAreaPaths configures which area paths to scope work item queries to.
+// If empty, no area path filter is applied.
+func (c *Client) SetAreaPaths(paths []string) {
+	c.areaPaths = paths
+}
+
+// SetActivities configures which activity types to filter work items by.
+// If empty, no activity filter is applied.
+func (c *Client) SetActivities(activities []string) {
+	c.activities = activities
 }
 
 // WorkItem represents a simplified Azure DevOps work item.
@@ -180,32 +202,149 @@ type updatesResponse struct {
 	} `json:"value"`
 }
 
-// doRequest performs an authenticated request to Azure DevOps.
+// doRequest performs an authenticated request to Azure DevOps with retry logic.
+// Retries up to 3 times on transient errors (429, 5xx) with exponential backoff and jitter.
+// On 401, invalidates the cached token and retries once with a fresh token.
 func (c *Client) doRequest(method, url string, body io.Reader) ([]byte, error) {
-	req, err := http.NewRequest(method, url, body)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+	const maxRetries = 3
+
+	// Buffer the body so it can be replayed on retries
+	var bodyBytes []byte
+	if body != nil {
+		var err error
+		bodyBytes, err = io.ReadAll(body)
+		if err != nil {
+			return nil, fmt.Errorf("reading request body: %w", err)
+		}
 	}
 
-	req.SetBasicAuth("", c.pat)
-	req.Header.Set("Content-Type", "application/json")
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			c.logger.Debug("retrying request",
+				"method", method,
+				"url", url,
+				"attempt", attempt,
+			)
+		}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("executing request: %w", err)
-	}
-	defer resp.Body.Close()
+		var reqBody io.Reader
+		if bodyBytes != nil {
+			reqBody = strings.NewReader(string(bodyBytes))
+		}
 
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
-	}
+		req, err := http.NewRequest(method, url, reqBody)
+		if err != nil {
+			return nil, fmt.Errorf("creating request: %w", err)
+		}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		token, err := c.tokenProv.getToken()
+		if err != nil {
+			return nil, fmt.Errorf("acquiring token: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			// Network-level error — retryable
+			lastErr = fmt.Errorf("executing request: %w", err)
+			c.logger.Warn("request failed (network)",
+				"method", method,
+				"url", url,
+				"attempt", attempt,
+				"error", err,
+			)
+			c.backoff(attempt, nil)
+			continue
+		}
+
+		data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+		resp.Body.Close()
+		if err != nil {
+			lastErr = fmt.Errorf("reading response: %w", err)
+			c.backoff(attempt, nil)
+			continue
+		}
+
+		// Success
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return data, nil
+		}
+
+		// 401 — token expired, invalidate and retry once
+		if resp.StatusCode == http.StatusUnauthorized {
+			c.logger.Warn("received 401, refreshing token",
+				"method", method,
+				"url", url,
+				"attempt", attempt,
+			)
+			c.tokenProv.invalidate()
+			lastErr = fmt.Errorf("API error (status 401): %s", string(data))
+			// Don't backoff on 401, just get a fresh token immediately
+			continue
+		}
+
+		// 429 — rate limited
+		if resp.StatusCode == http.StatusTooManyRequests {
+			c.logger.Warn("rate limited by ADO",
+				"method", method,
+				"url", url,
+				"attempt", attempt,
+				"status", resp.StatusCode,
+			)
+			lastErr = fmt.Errorf("API error (status 429): %s", string(data))
+			retryAfter := resp.Header.Get("Retry-After")
+			c.backoff(attempt, parseRetryAfter(retryAfter))
+			continue
+		}
+
+		// 5xx — server error, retryable
+		if resp.StatusCode >= 500 {
+			c.logger.Warn("server error from ADO",
+				"method", method,
+				"url", url,
+				"attempt", attempt,
+				"status", resp.StatusCode,
+			)
+			lastErr = fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(data))
+			c.backoff(attempt, nil)
+			continue
+		}
+
+		// 4xx (not 401/429) — non-retryable client error
 		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(data))
 	}
 
-	return data, nil
+	return nil, fmt.Errorf("request failed after %d retries: %w", maxRetries, lastErr)
+}
+
+// backoff sleeps for an exponential duration with jitter.
+// If retryAfter is provided (from Retry-After header), uses that as the minimum.
+func (c *Client) backoff(attempt int, retryAfter *time.Duration) {
+	base := time.Duration(math.Pow(2, float64(attempt))) * 500 * time.Millisecond
+	if retryAfter != nil && *retryAfter > base {
+		base = *retryAfter
+	}
+	// Add jitter: 0-50% of base
+	jitter := time.Duration(rand.Int63n(int64(base / 2)))
+	sleep := base + jitter
+
+	c.logger.Debug("backing off before retry", "duration", sleep)
+	time.Sleep(sleep)
+}
+
+// parseRetryAfter parses the Retry-After header value (seconds).
+func parseRetryAfter(val string) *time.Duration {
+	if val == "" {
+		return nil
+	}
+	seconds, err := strconv.Atoi(val)
+	if err != nil {
+		return nil
+	}
+	d := time.Duration(seconds) * time.Second
+	return &d
 }
 
 // teamsResponse represents the list of teams in a project.
@@ -384,7 +523,10 @@ func (c *Client) GetDeveloperReport(developer, from, to string) (*DeveloperRepor
 	// Fetch PR metrics and details
 	prMetrics, prDetails, err := c.GetPRMetrics(developer, from, to)
 	if err != nil {
-		log.Printf("Warning: could not fetch PR metrics for %s: %v", developer, err)
+		c.logger.Warn("could not fetch PR metrics",
+			"developer", developer,
+			"error", err,
+		)
 	} else {
 		report.PRMetrics = prMetrics
 		report.PRDetails = prDetails
@@ -411,13 +553,35 @@ func (c *Client) getWorkItemsForDeveloper(developer, from, to string) ([]WorkIte
 		typeFilter = strings.Join(types, ", ")
 	}
 
+	// Build area path filter
+	var areaPathClause string
+	if len(c.areaPaths) > 0 {
+		parts := make([]string, len(c.areaPaths))
+		for i, ap := range c.areaPaths {
+			parts[i] = fmt.Sprintf("[System.AreaPath] = '%s'", ap)
+		}
+		areaPathClause = fmt.Sprintf("AND (%s)", strings.Join(parts, " OR "))
+	}
+
+	// Build activity filter
+	var activityClause string
+	if len(c.activities) > 0 {
+		acts := make([]string, len(c.activities))
+		for i, a := range c.activities {
+			acts[i] = fmt.Sprintf("'%s'", a)
+		}
+		activityClause = fmt.Sprintf("AND [Microsoft.VSTS.Common.Activity] IN (%s)", strings.Join(acts, ", "))
+	}
+
 	// Query for work items that were ever assigned to this developer and changed in the date range
 	wiql := fmt.Sprintf(`SELECT [System.Id] FROM WorkItems 
 		WHERE [System.WorkItemType] IN (%s) 
 		AND [System.ChangedDate] >= '%s' 
 		AND [System.ChangedDate] <= '%s'
 		AND [System.AssignedTo] EVER '%s'
-		ORDER BY [System.ChangedDate] DESC`, typeFilter, from, to, developer)
+		%s
+		%s
+		ORDER BY [System.ChangedDate] DESC`, typeFilter, from, to, developer, areaPathClause, activityClause)
 
 	url := fmt.Sprintf("%s/%s/_apis/wit/wiql?api-version=7.0", c.orgURL, c.project)
 	body := strings.NewReader(fmt.Sprintf(`{"query": %q}`, wiql))
@@ -449,6 +613,8 @@ func (c *Client) getWorkItemsForDeveloper(developer, from, to string) ([]WorkIte
 	// Enrich with history (reactivation count, assignment dates) — parallel with concurrency limit
 	sem := make(chan struct{}, 10) // max 10 concurrent ADO API calls
 	var wg sync.WaitGroup
+	var enrichErrors []int
+	var errMu sync.Mutex
 	for i := range workItems {
 		wg.Add(1)
 		go func(idx int) {
@@ -458,6 +624,13 @@ func (c *Client) getWorkItemsForDeveloper(developer, from, to string) ([]WorkIte
 
 			updates, err := c.getWorkItemUpdates(workItems[idx].ID)
 			if err != nil {
+				errMu.Lock()
+				enrichErrors = append(enrichErrors, workItems[idx].ID)
+				errMu.Unlock()
+				c.logger.Warn("failed to fetch work item history",
+					"workItemId", workItems[idx].ID,
+					"error", err,
+				)
 				return
 			}
 			workItems[idx].History = extractStateChanges(updates)
@@ -468,6 +641,15 @@ func (c *Client) getWorkItemsForDeveloper(developer, from, to string) ([]WorkIte
 		}(i)
 	}
 	wg.Wait()
+
+	if len(enrichErrors) > 0 {
+		c.logger.Warn("partial work item history enrichment",
+			"developer", developer,
+			"totalItems", len(workItems),
+			"failedItems", len(enrichErrors),
+			"failedIds", enrichErrors,
+		)
+	}
 
 	return workItems, nil
 }
@@ -852,6 +1034,51 @@ type prThread struct {
 	} `json:"pullRequestThreadContext"`
 }
 
+// areaPathNode represents a node in the ADO classification tree.
+type areaPathNode struct {
+	Name     string         `json:"name"`
+	Path     string         `json:"path"`
+	Children []areaPathNode `json:"children,omitempty"`
+}
+
+// classificationResponse represents the ADO classification nodes API response.
+type classificationResponse struct {
+	Name     string                   `json:"name"`
+	Path     string                   `json:"path"`
+	Children []classificationResponse `json:"children,omitempty"`
+}
+
+// GetAreaPaths returns all area paths in the project as a flat list of full path strings.
+func (c *Client) GetAreaPaths() ([]string, error) {
+	url := fmt.Sprintf("%s/%s/_apis/wit/classificationnodes/areas?$depth=10&api-version=7.0", c.orgURL, c.project)
+
+	data, err := c.doRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetching area paths: %w", err)
+	}
+
+	var root classificationResponse
+	if err := json.Unmarshal(data, &root); err != nil {
+		return nil, fmt.Errorf("parsing area paths response: %w", err)
+	}
+
+	var paths []string
+	collectAreaPaths(&root, &paths)
+	return paths, nil
+}
+
+// collectAreaPaths recursively flattens the area path tree into a slice.
+func collectAreaPaths(node *classificationResponse, paths *[]string) {
+	if node.Path != "" {
+		// ADO returns paths like "\Solvas\Area\SubArea" — strip leading backslash
+		path := strings.TrimPrefix(node.Path, "\\")
+		*paths = append(*paths, path)
+	}
+	for i := range node.Children {
+		collectAreaPaths(&node.Children[i], paths)
+	}
+}
+
 // GetPRMetrics fetches pull request metrics for a developer within a date range.
 // Also returns detailed PR info with linked work items.
 func (c *Client) GetPRMetrics(developer, from, to string) (*PRMetrics, []PRDetail, error) {
@@ -917,6 +1144,7 @@ func (c *Client) GetPRMetrics(developer, from, to string) (*PRMetrics, []PRDetai
 		filesChanged     int
 		actionable       int
 		linkedWorkItems  []int
+		errors           []string
 	}
 
 	results := make([]prResult, len(prs))
@@ -935,6 +1163,8 @@ func (c *Client) GetPRMetrics(developer, from, to string) (*PRMetrics, []PRDetai
 			// Commits
 			if commits, err := c.getPRCommitCount(pr.Repository.ID, pr.PullRequestID); err == nil {
 				r.commits = commits
+			} else {
+				r.errors = append(r.errors, fmt.Sprintf("commits: %v", err))
 			}
 
 			// Files changed (only for merged PRs)
@@ -953,7 +1183,8 @@ func (c *Client) GetPRMetrics(developer, from, to string) (*PRMetrics, []PRDetai
 	}
 	wg.Wait()
 
-	// Aggregate parallel results
+	// Aggregate parallel results and log partial failures
+	var prErrors int
 	for _, r := range results {
 		metrics.TotalCommits += r.commits
 		metrics.FilesChanged += r.filesChanged
@@ -961,6 +1192,21 @@ func (c *Client) GetPRMetrics(developer, from, to string) (*PRMetrics, []PRDetai
 		if len(r.linkedWorkItems) > 0 {
 			details[r.idx].LinkedWorkItemIDs = r.linkedWorkItems
 		}
+		if len(r.errors) > 0 {
+			prErrors++
+			c.logger.Debug("partial PR detail fetch",
+				"prId", prs[r.idx].PullRequestID,
+				"errors", r.errors,
+			)
+		}
+	}
+
+	if prErrors > 0 {
+		c.logger.Warn("partial PR detail enrichment",
+			"developer", developer,
+			"totalPRs", len(prs),
+			"prsWithErrors", prErrors,
+		)
 	}
 
 	return metrics, details, nil

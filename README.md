@@ -2,6 +2,8 @@
 
 A web application to track developer code contribution, velocity, and quality metrics by analyzing Azure DevOps work items and pull requests.
 
+**Live**: [dpulse.solvasfabric.com](https://dpulse.solvasfabric.com)
+
 ## Purpose
 
 Teams use Azure DevOps to track work items (bugs, tasks, user stories, etc.) and code through pull requests. This app provides visibility into:
@@ -26,7 +28,7 @@ Teams use Azure DevOps to track work items (bugs, tasks, user stories, etc.) and
 ## Architecture
 
 - **Frontend**: Svelte + Vite + Chart.js (served via nginx in production)
-- **Backend**: Go REST API that connects to Azure DevOps via PAT
+- **Backend**: Go REST API that connects to Azure DevOps via Service Principal (OAuth2 client credentials)
 - **Deployment**: Helm chart targeting AKS (Azure Kubernetes Service)
 
 ## Local Development
@@ -35,7 +37,7 @@ Teams use Azure DevOps to track work items (bugs, tasks, user stories, etc.) and
 
 - Go 1.21+
 - Node.js 18+
-- An Azure DevOps PAT with Work Items and Code (Git) read access
+- An Azure AD Service Principal with access to your Azure DevOps organization
 
 ### Setup
 
@@ -43,7 +45,7 @@ Teams use Azure DevOps to track work items (bugs, tasks, user stories, etc.) and
    ```bash
    cp .env.example .env
    ```
-   Fill in your ADO organization URL, PAT, and project name.
+   Fill in your ADO organization URL, SP credentials (tenant ID, client ID, client secret), and project name.
 
 2. Start the backend:
    ```bash
@@ -75,10 +77,24 @@ Frontend: `http://localhost:3000` | Backend API: `http://localhost:8090`
 | Variable | Description |
 |----------|-------------|
 | `ADO_ORG_URL` | Azure DevOps organization URL (e.g., `https://dev.azure.com/your-org`) |
-| `ADO_PAT` | Personal Access Token with Work Items and Code read access |
+| `ADO_TENANT_ID` | Azure AD tenant (directory) ID |
+| `ADO_CLIENT_ID` | Service Principal application (client) ID |
+| `ADO_CLIENT_SECRET` | Service Principal client secret |
 | `ADO_PROJECT` | Azure DevOps project name |
 | `ADO_TEAMS` | Comma-separated team names (initial seed for settings, optional) |
 | `SERVER_PORT` | Backend port (default: `8080`) |
+
+### Service Principal Setup
+
+The backend authenticates to Azure DevOps using a Service Principal via the OAuth2 client credentials flow. To set this up:
+
+1. Register an App in Azure AD (Entra ID) or use an existing one.
+2. Create a client secret for the app.
+3. Add the Service Principal to your Azure DevOps organization:
+   - Go to Organization Settings > Users > Add user
+   - Add the SP with appropriate access level (Basic or Stakeholder)
+   - Grant it access to the project(s) it needs to read from.
+4. Set `ADO_TENANT_ID`, `ADO_CLIENT_ID`, and `ADO_CLIENT_SECRET` in your `.env` or Helm values.
 
 ### Settings Page
 
@@ -109,7 +125,7 @@ See [helm/delivery-pulse/README.md](helm/delivery-pulse/README.md) for full deta
 ./deploy.sh uninstall dev
 ```
 
-The `deploy.sh` script handles context switching, PAT input (securely), and install vs upgrade detection. See `./deploy.sh help` for usage.
+The `deploy.sh` script handles context switching, SP client secret input (securely via prompt), and install vs upgrade detection. See `./deploy.sh help` for usage.
 
 ### Bash Completion
 

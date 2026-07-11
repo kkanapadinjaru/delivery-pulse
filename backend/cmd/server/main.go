@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,6 +15,12 @@ import (
 )
 
 func main() {
+	// Initialize structured logger
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	slog.SetDefault(logger)
+
 	// Load .env file if it exists (local development)
 	// Try multiple paths to support running from backend/ or project root
 	_ = godotenv.Load("../.env")
@@ -22,13 +28,20 @@ func main() {
 	_ = godotenv.Load("../../.env")
 
 	orgURL := os.Getenv("ADO_ORG_URL")
-	pat := os.Getenv("ADO_PAT")
 	project := os.Getenv("ADO_PROJECT")
 	port := os.Getenv("SERVER_PORT")
 	teamsEnv := os.Getenv("ADO_TEAMS")
+	clientID := os.Getenv("ADO_CLIENT_ID")
+	clientSecret := os.Getenv("ADO_CLIENT_SECRET")
+	tenantID := os.Getenv("ADO_TENANT_ID")
 
-	if orgURL == "" || pat == "" || project == "" {
-		log.Fatal("ADO_ORG_URL, ADO_PAT, and ADO_PROJECT environment variables are required")
+	if orgURL == "" || project == "" {
+		logger.Error("missing required environment variables", "required", "ADO_ORG_URL, ADO_PROJECT")
+		os.Exit(1)
+	}
+	if clientID == "" || clientSecret == "" || tenantID == "" {
+		logger.Error("missing required environment variables", "required", "ADO_CLIENT_ID, ADO_CLIENT_SECRET, ADO_TENANT_ID")
+		os.Exit(1)
 	}
 
 	if port == "" {
@@ -59,22 +72,31 @@ func main() {
 		_ = store.Update(currentSettings)
 	}
 
-	client := ado.NewClient(orgURL, pat, project)
+	client := ado.NewClient(orgURL, tenantID, clientID, clientSecret, project, logger)
 	client.SetTeams(store.Get().Teams)
 	client.SetWorkItemTypes(store.Get().WorkItemTypes)
+	client.SetAreaPaths(store.Get().AreaPaths)
+	client.SetActivities(store.Get().Activities)
 
-	router := api.NewRouter(client, store)
+	router := api.NewRouter(client, store, logger)
 
 	addr := fmt.Sprintf(":%s", port)
-	log.Printf("Starting server on %s", addr)
-	log.Printf("Connected to Azure DevOps: %s / %s", orgURL, project)
+	logger.Info("server starting",
+		"addr", addr,
+		"org", orgURL,
+		"project", project,
+		"auth", "service-principal",
+	)
 	appliedSettings := store.Get()
 	if len(appliedSettings.Teams) > 0 {
-		log.Printf("Configured teams: %s", strings.Join(appliedSettings.Teams, ", "))
+		logger.Info("configuration loaded",
+			"teams", appliedSettings.Teams,
+			"workItemTypes", appliedSettings.WorkItemTypes,
+		)
 	}
-	log.Printf("Work item types: %s", strings.Join(appliedSettings.WorkItemTypes, ", "))
 
 	if err := http.ListenAndServe(addr, router); err != nil {
-		log.Fatalf("Server failed: %v", err)
+		logger.Error("server failed", "error", err)
+		os.Exit(1)
 	}
 }

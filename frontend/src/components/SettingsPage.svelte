@@ -20,21 +20,49 @@
     'Review',
   ];
 
+  // Common ADO activity types
+  const allActivityTypes = [
+    'Development',
+    'Testing',
+    'Requirements',
+    'Design',
+    'Deployment',
+    'Documentation',
+  ];
+
   let teams = '';
   let selectedTypes = [];
+  let selectedAreaPaths = [];
+  let selectedActivities = [];
+  let availableAreaPaths = [];
+  let newActivityInput = '';
   let loading = true;
   let saving = false;
   let error = '';
   let success = '';
   let showTypeDropdown = false;
+  let showAreaPathDropdown = false;
+  let showActivityDropdown = false;
+  let loadingAreaPaths = false;
 
   onMount(async () => {
     try {
-      const resp = await fetch('/api/settings');
-      if (!resp.ok) throw new Error('Failed to load settings');
-      const data = await resp.json();
+      const [settingsResp, areaPathsResp] = await Promise.all([
+        fetch('/api/settings'),
+        fetch('/api/areapaths'),
+      ]);
+
+      if (!settingsResp.ok) throw new Error('Failed to load settings');
+      const data = await settingsResp.json();
       teams = (data.teams || []).join(', ');
       selectedTypes = data.workItemTypes || ['Bug', 'Task'];
+      selectedAreaPaths = data.areaPaths || [];
+      selectedActivities = data.activities || ['Development', 'Testing', 'Requirements'];
+
+      if (areaPathsResp.ok) {
+        const apData = await areaPathsResp.json();
+        availableAreaPaths = apData.areaPaths || [];
+      }
     } catch (e) {
       error = e.message;
     } finally {
@@ -54,6 +82,45 @@
     selectedTypes = selectedTypes.filter(t => t !== type);
   }
 
+  function toggleAreaPath(path) {
+    if (selectedAreaPaths.includes(path)) {
+      selectedAreaPaths = selectedAreaPaths.filter(p => p !== path);
+    } else {
+      selectedAreaPaths = [...selectedAreaPaths, path];
+    }
+  }
+
+  function removeAreaPath(path) {
+    selectedAreaPaths = selectedAreaPaths.filter(p => p !== path);
+  }
+
+  function toggleActivity(activity) {
+    if (selectedActivities.includes(activity)) {
+      selectedActivities = selectedActivities.filter(a => a !== activity);
+    } else {
+      selectedActivities = [...selectedActivities, activity];
+    }
+  }
+
+  function removeActivity(activity) {
+    selectedActivities = selectedActivities.filter(a => a !== activity);
+  }
+
+  function addCustomActivity() {
+    const val = newActivityInput.trim();
+    if (val && !selectedActivities.includes(val)) {
+      selectedActivities = [...selectedActivities, val];
+    }
+    newActivityInput = '';
+  }
+
+  function handleActivityKeydown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addCustomActivity();
+    }
+  }
+
   async function handleSave() {
     saving = true;
     error = '';
@@ -71,6 +138,8 @@
         body: JSON.stringify({
           teams: teamsList,
           workItemTypes: selectedTypes,
+          areaPaths: selectedAreaPaths,
+          activities: selectedActivities,
         }),
       });
 
@@ -80,7 +149,6 @@
       }
 
       success = 'Settings saved successfully. Changes will take effect on the next report generation.';
-      // Notify parent that settings changed (so developer list can be refreshed)
       dispatch('saved');
     } catch (e) {
       error = e.message;
@@ -89,8 +157,14 @@
     }
   }
 
-  function handleDropdownBlur() {
-    setTimeout(() => { showTypeDropdown = false; }, 150);
+  function handleDropdownBlur(setter) {
+    setTimeout(() => { setter(false); }, 150);
+  }
+
+  // Get the short display name for an area path (last segment)
+  function shortAreaPath(path) {
+    const parts = path.split('\\');
+    return parts.length > 1 ? parts.slice(1).join(' > ') : path;
   }
 </script>
 
@@ -133,7 +207,7 @@
             type="button"
             class="dropdown-trigger"
             on:click={() => showTypeDropdown = !showTypeDropdown}
-            on:blur={handleDropdownBlur}
+            on:blur={() => handleDropdownBlur(v => showTypeDropdown = v)}
           >
             Add work item type...
           </button>
@@ -145,6 +219,89 @@
               {#if allWorkItemTypes.filter(t => !selectedTypes.includes(t)).length === 0}
                 <li class="empty-item">All types selected</li>
               {/if}
+            </ul>
+          {/if}
+        </div>
+      </div>
+
+      <div class="setting-group">
+        <label>Area Paths</label>
+        <p class="help-text">Select which area paths to scope work item queries to. Leave empty to include all areas.</p>
+
+        <div class="selected-types">
+          {#each selectedAreaPaths as path}
+            <span class="type-tag area-tag" title={path}>
+              {shortAreaPath(path)}
+              <button type="button" class="remove-tag" on:click={() => removeAreaPath(path)} aria-label="Remove {path}">&times;</button>
+            </span>
+          {/each}
+          {#if selectedAreaPaths.length === 0}
+            <span class="no-types">No area paths selected (all areas included)</span>
+          {/if}
+        </div>
+
+        <div class="type-dropdown-wrapper">
+          <button
+            type="button"
+            class="dropdown-trigger"
+            on:click={() => showAreaPathDropdown = !showAreaPathDropdown}
+            on:blur={() => handleDropdownBlur(v => showAreaPathDropdown = v)}
+          >
+            Add area path...
+          </button>
+          {#if showAreaPathDropdown}
+            <ul class="type-dropdown area-dropdown">
+              {#each availableAreaPaths.filter(p => !selectedAreaPaths.includes(p)) as path}
+                <li on:mousedown={() => toggleAreaPath(path)} title={path}>{shortAreaPath(path)}</li>
+              {/each}
+              {#if availableAreaPaths.filter(p => !selectedAreaPaths.includes(p)).length === 0}
+                <li class="empty-item">All available paths selected</li>
+              {/if}
+            </ul>
+          {/if}
+        </div>
+      </div>
+
+      <div class="setting-group">
+        <label>Activity Types</label>
+        <p class="help-text">Filter work items by activity type. Leave empty to include all activities.</p>
+
+        <div class="selected-types">
+          {#each selectedActivities as activity}
+            <span class="type-tag">
+              {activity}
+              <button type="button" class="remove-tag" on:click={() => removeActivity(activity)} aria-label="Remove {activity}">&times;</button>
+            </span>
+          {/each}
+          {#if selectedActivities.length === 0}
+            <span class="no-types">No activity filter (all activities included)</span>
+          {/if}
+        </div>
+
+        <div class="type-dropdown-wrapper">
+          <button
+            type="button"
+            class="dropdown-trigger"
+            on:click={() => showActivityDropdown = !showActivityDropdown}
+            on:blur={() => handleDropdownBlur(v => showActivityDropdown = v)}
+          >
+            Add activity type...
+          </button>
+          {#if showActivityDropdown}
+            <ul class="type-dropdown">
+              {#each allActivityTypes.filter(a => !selectedActivities.includes(a)) as activity}
+                <li on:mousedown={() => toggleActivity(activity)}>{activity}</li>
+              {/each}
+              <li class="custom-input-item">
+                <input
+                  type="text"
+                  bind:value={newActivityInput}
+                  on:keydown={handleActivityKeydown}
+                  placeholder="Custom activity..."
+                  class="inline-input"
+                />
+                <button type="button" class="inline-add-btn" on:mousedown={addCustomActivity}>+</button>
+              </li>
             </ul>
           {/if}
         </div>
@@ -247,6 +404,13 @@
     border-radius: 4px;
   }
 
+  .area-tag {
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .remove-tag {
     background: none;
     border: none;
@@ -305,6 +469,11 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   }
 
+  .area-dropdown {
+    min-width: 320px;
+    max-height: 280px;
+  }
+
   .type-dropdown li {
     padding: 0.5rem 0.75rem;
     font-size: 0.85rem;
@@ -330,6 +499,44 @@
   .type-dropdown .empty-item:hover {
     background: none;
     color: #999;
+  }
+
+  .custom-input-item {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.4rem 0.5rem;
+    border-top: 1px solid #e2e8f0;
+    cursor: default;
+  }
+
+  .custom-input-item:hover {
+    background: none !important;
+    color: inherit !important;
+  }
+
+  .inline-input {
+    flex: 1;
+    padding: 0.3rem 0.5rem;
+    border: 1px solid #d0d5dd;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    width: auto;
+  }
+
+  .inline-add-btn {
+    padding: 0.3rem 0.6rem;
+    border: none;
+    background: #206473;
+    color: white;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .inline-add-btn:hover {
+    background: #185364;
   }
 
   .message {

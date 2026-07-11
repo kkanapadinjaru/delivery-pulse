@@ -33,11 +33,11 @@ spec:
             - configMapRef:
                 name: {{ include "delivery-pulse.fullname" . }}
           env:
-            - name: ADO_PAT
+            - name: ADO_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: {{ include "delivery-pulse.fullname" . }}
-                  key: ado-pat
+                  key: ado-client-secret
           livenessProbe:
             {{- toYaml .Values.server.livenessProbe | nindent 12 }}
           readinessProbe:
