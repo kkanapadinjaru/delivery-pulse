@@ -3,72 +3,85 @@
   import Chart from 'chart.js/auto';
 
   export let prDetails = [];
+  export let throughputTrend = [];
   export let from = '';
   export let to = '';
 
   let chartCanvas;
   let chart;
 
-  // Parse PR dates and aggregate by day
-  $: dailyData = computeDailyActivity(prDetails, from, to);
+  // Aggregate PRs merged by week (Monday-aligned) to match throughput frequency
+  $: weeklyData = computeWeeklyData(prDetails, throughputTrend, from, to);
 
-  function computeDailyActivity(prs, fromDate, toDate) {
-    if (!prs.length || !fromDate || !toDate) return { labels: [], merged: [] };
+  function computeWeeklyData(prs, throughput, fromDate, toDate) {
+    if (!fromDate || !toDate) return { labels: [], prsMerged: [], itemsCompleted: [] };
 
-    // Build a map of dates in the range
-    const start = new Date(fromDate);
-    const end = new Date(toDate);
-    const mergedByDay = {};
+    // Use throughput trend weeks as the canonical week list
+    const weeks = (throughput || []).map(w => w.weekStart);
+    if (weeks.length === 0) return { labels: [], prsMerged: [], itemsCompleted: [] };
 
-    // Initialize all days in range
-    const current = new Date(start);
-    while (current <= end) {
-      const key = current.toISOString().split('T')[0];
-      mergedByDay[key] = 0;
-      current.setDate(current.getDate() + 1);
-    }
+    // Count PRs merged per week
+    const prByWeek = {};
+    for (const w of weeks) prByWeek[w] = 0;
 
-    // Count merged PRs per day (by closedDate for completed PRs)
     for (const pr of prs) {
       if (pr.status === 'completed' && pr.closedDate) {
-        const day = pr.closedDate.split('T')[0];
-        if (mergedByDay[day] !== undefined) {
-          mergedByDay[day]++;
+        const closedDate = new Date(pr.closedDate);
+        // Find the week this PR belongs to
+        for (let i = 0; i < weeks.length; i++) {
+          const weekStart = new Date(weeks[i]);
+          const weekEnd = new Date(weekStart);
+          weekEnd.setDate(weekEnd.getDate() + 7);
+          if (closedDate >= weekStart && closedDate < weekEnd) {
+            prByWeek[weeks[i]]++;
+            break;
+          }
         }
       }
     }
 
-    const sortedDays = Object.keys(mergedByDay).sort();
     return {
-      labels: sortedDays.map(d => formatDateLabel(d)),
-      merged: sortedDays.map(d => mergedByDay[d]),
+      labels: weeks.map(w => formatWeekLabel(w)),
+      prsMerged: weeks.map(w => prByWeek[w] || 0),
+      itemsCompleted: (throughput || []).map(w => w.count),
     };
   }
 
-  function formatDateLabel(dateStr) {
+  function formatWeekLabel(dateStr) {
     const d = new Date(dateStr);
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
 
   function buildChart() {
     if (chart) { chart.destroy(); chart = null; }
-    if (!chartCanvas || !dailyData.labels.length) return;
+    if (!chartCanvas || !weeklyData.labels.length) return;
 
     chart = new Chart(chartCanvas, {
-      type: 'line',
+      type: 'bar',
       data: {
-        labels: dailyData.labels,
+        labels: weeklyData.labels,
         datasets: [
           {
-            label: 'PRs Merged',
-            data: dailyData.merged,
+            label: 'Items Completed',
+            data: weeklyData.itemsCompleted,
+            backgroundColor: 'rgba(32, 100, 115, 0.7)',
             borderColor: '#206473',
-            backgroundColor: 'rgba(32, 100, 115, 0.1)',
-            fill: true,
+            borderWidth: 1,
+            order: 2,
+          },
+          {
+            label: 'PRs Merged',
+            data: weeklyData.prsMerged,
+            type: 'line',
+            borderColor: '#d95a32',
+            backgroundColor: 'rgba(217, 90, 50, 0.1)',
+            fill: false,
             tension: 0.3,
-            pointRadius: 2,
-            pointHoverRadius: 5,
-            pointBackgroundColor: '#206473',
+            pointRadius: 3,
+            pointHoverRadius: 6,
+            pointBackgroundColor: '#d95a32',
+            borderWidth: 2,
+            order: 1,
           },
         ],
       },
@@ -78,8 +91,8 @@
         plugins: {
           title: {
             display: true,
-            text: 'Daily PR Activity',
-            font: { size: 14, weight: '600' },
+            text: 'Weekly Activity — Work Items Completed vs PRs Merged',
+            font: { size: 13, weight: '600' },
             color: '#206473',
           },
           legend: {
@@ -88,6 +101,10 @@
               font: { size: 11 },
               usePointStyle: true,
             },
+          },
+          tooltip: {
+            mode: 'index',
+            intersect: false,
           },
         },
         scales: {
@@ -98,6 +115,12 @@
               font: { size: 11 },
             },
             grid: { color: 'rgba(0,0,0,0.05)' },
+            title: {
+              display: true,
+              text: 'Count',
+              font: { size: 11 },
+              color: '#666',
+            },
           },
           x: {
             ticks: {
@@ -114,22 +137,19 @@
   }
 
   onMount(() => {
-    if (dailyData.labels.length) buildChart();
+    if (weeklyData.labels.length) buildChart();
   });
 
   onDestroy(() => {
     if (chart) { chart.destroy(); chart = null; }
   });
 
-  $: if (dailyData.labels.length && chartCanvas) {
+  $: if (weeklyData.labels.length && chartCanvas) {
     buildChart();
   }
 </script>
 
-<section class="activity-timeline" aria-label="Activity Timeline">
-  <div class="panel-header">
-    <h3>Activity Timeline</h3>
-  </div>
+<section class="activity-timeline" aria-label="Weekly Activity">
   <div class="chart-container">
     <canvas bind:this={chartCanvas}></canvas>
   </div>
@@ -144,15 +164,8 @@
     box-shadow: 0 1px 4px rgba(46, 58, 61, 0.08), 0 4px 16px rgba(46, 58, 61, 0.06);
   }
 
-  .panel-header h3 {
-    font-size: 0.95rem;
-    color: #206473;
-    margin: 0 0 1rem 0;
-    font-weight: 600;
-  }
-
   .chart-container {
-    height: 260px;
+    height: 280px;
     position: relative;
   }
 </style>

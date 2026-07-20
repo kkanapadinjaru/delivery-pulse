@@ -34,9 +34,11 @@ func NewRouter(client *ado.Client, store *settings.Store, logger *slog.Logger) h
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", h.health)
 		r.Get("/developers", h.getDevelopers)
+		r.Get("/all-developers", h.getAllDevelopers)
 		r.Get("/report", h.getReport)
 		r.Get("/workitems", h.getWorkItems)
 		r.Get("/areapaths", h.getAreaPaths)
+		r.Get("/team-dashboard", h.getTeamDashboard)
 		r.Get("/settings", h.getSettings)
 		r.Put("/settings", h.updateSettings)
 	})
@@ -91,6 +93,20 @@ func (h *handler) getDevelopers(w http.ResponseWriter, r *http.Request) {
 	developers, err := h.client.GetDevelopers()
 	if err != nil {
 		h.logger.Error("failed to fetch developers", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": err.Error(),
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"developers": developers,
+	})
+}
+
+func (h *handler) getAllDevelopers(w http.ResponseWriter, r *http.Request) {
+	developers, err := h.client.GetAllDevelopers()
+	if err != nil {
+		h.logger.Error("failed to fetch all developers", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": err.Error(),
 		})
@@ -176,6 +192,33 @@ func (h *handler) getAreaPaths(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *handler) getTeamDashboard(w http.ResponseWriter, r *http.Request) {
+	from := r.URL.Query().Get("from")
+	to := r.URL.Query().Get("to")
+
+	if from == "" || to == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "from and to query parameters are required",
+		})
+		return
+	}
+
+	dashboard, err := h.client.GetTeamDashboard(from, to)
+	if err != nil {
+		h.logger.Error("failed to generate team dashboard",
+			"from", from,
+			"to", to,
+			"error", err,
+		)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, dashboard)
+}
+
 func (h *handler) getSettings(w http.ResponseWriter, r *http.Request) {
 	s := h.settings.Get()
 	writeJSON(w, http.StatusOK, s)
@@ -201,12 +244,16 @@ func (h *handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 	// Apply teams change to the ADO client immediately
 	h.client.SetTeams(s.Teams)
 
+	// Apply developer allowlist
+	h.client.SetDevelopers(s.Developers)
+
 	// Apply work item types change
 	h.client.SetWorkItemTypes(s.WorkItemTypes)
 
 	// Apply area paths and activities
 	h.client.SetAreaPaths(s.AreaPaths)
 	h.client.SetActivities(s.Activities)
+	h.client.SetPRSizeThresholds(s.PRSizeSmallMax, s.PRSizeMediumMax)
 
 	h.logger.Info("settings updated",
 		"teams", s.Teams,

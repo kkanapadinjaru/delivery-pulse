@@ -2,6 +2,7 @@
   import Header from './components/Header.svelte';
   import FilterPanel from './components/FilterPanel.svelte';
   import ReportSummary from './components/ReportSummary.svelte';
+  import MetricsInsights from './components/MetricsInsights.svelte';
   import WorkItemsTable from './components/WorkItemsTable.svelte';
   import QualityIndicators from './components/QualityIndicators.svelte';
   import HelpModal from './components/HelpModal.svelte';
@@ -10,10 +11,11 @@
   import ActivityTimeline from './components/ActivityTimeline.svelte';
   import ReposPanel from './components/ReposPanel.svelte';
   import SettingsPage from './components/SettingsPage.svelte';
+  import TeamDashboard from './components/TeamDashboard.svelte';
   import { fetchDevelopers, fetchReport, fetchWorkItems } from './api.js';
 
   let page = 'main'; // 'main' or 'settings'
-  let mode = 'single'; // 'single' or 'compare'
+  let mode = 'single'; // 'single', 'compare', or 'team'
   let developers = [];
   let devsLoading = true;
   let devsError = '';
@@ -117,6 +119,10 @@
       devsLoading = false;
     }
   }
+
+  function exportPDF() {
+    window.print();
+  }
 </script>
 
 <main>
@@ -128,7 +134,12 @@
     <div class="mode-toggle">
       <button class:active={mode === 'single'} on:click={() => mode = 'single'}>Single Report</button>
       <button class:active={mode === 'compare'} on:click={() => mode = 'compare'}>Compare</button>
+      <button class:active={mode === 'team'} on:click={() => mode = 'team'}>Team</button>
     </div>
+
+    {#if (mode === 'single' && report) || (mode === 'compare' && compareReports.length >= 2) || (mode === 'team')}
+      <button class="export-btn" on:click={exportPDF}>Export PDF</button>
+    {/if}
 
     {#if mode === 'single'}
       <FilterPanel
@@ -155,14 +166,17 @@
 
       {#if report}
         <ReportSummary {report} />
+        <MetricsInsights {report} />
         <QualityIndicators {report} prDetails={report.prDetails || []} />
+        {#if (report.prDetails && report.prDetails.length > 0) || (report.throughputTrend && report.throughputTrend.length > 0)}
+          <ActivityTimeline prDetails={report.prDetails || []} throughputTrend={report.throughputTrend || []} from={report.from} to={report.to} />
+        {/if}
         {#if report.prDetails && report.prDetails.length > 0}
-          <ActivityTimeline prDetails={report.prDetails} from={report.from} to={report.to} />
           <ReposPanel prDetails={report.prDetails} />
         {/if}
         <WorkItemsTable {workItems} prDetails={report.prDetails || []} adoBaseUrl={report.adoBaseUrl || ''} />
       {/if}
-    {:else}
+    {:else if mode === 'compare'}
       <ComparePanel
         {developers} {devsLoading} {devsError}
         bind:selectedDevs={compareSelectedDevs}
@@ -188,6 +202,8 @@
       {#if compareReports.length >= 2}
         <CompareCharts reports={compareReports} />
       {/if}
+    {:else if mode === 'team'}
+      <TeamDashboard />
     {/if}
     {/if}
   </div>
@@ -270,5 +286,64 @@
     padding: 1rem 1.5rem;
     margin-bottom: 1.5rem;
     color: #9b1c1c;
+  }
+
+  .export-btn {
+    padding: 0.4rem 1rem;
+    background: transparent;
+    color: #206473;
+    border: 1px solid #206473;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    margin-bottom: 1.5rem;
+    transition: all 0.15s;
+  }
+
+  .export-btn:hover {
+    background: #e8f4f7;
+  }
+
+  /* Print styles */
+  @media print {
+    :global(body) {
+      background: white !important;
+    }
+
+    :global(.mode-toggle),
+    :global(.export-btn),
+    :global(header),
+    :global(.filter-panel),
+    :global(.compare-panel) {
+      display: none !important;
+    }
+
+    /* Hide detail sections in single report */
+    :global(.activity-timeline),
+    :global(.repos-panel),
+    :global(.work-items-table) {
+      display: none !important;
+    }
+
+    /* Hide team dashboard controls in print */
+    :global(.date-controls),
+    :global(.refresh-btn) {
+      display: none !important;
+    }
+
+    :global(.container) {
+      max-width: 100% !important;
+      padding: 0 !important;
+    }
+
+    :global(.summary),
+    :global(.metrics-insights),
+    :global(.quality),
+    :global(.compare-charts),
+    :global(.team-dashboard) {
+      box-shadow: none !important;
+      break-inside: avoid;
+    }
   }
 </style>

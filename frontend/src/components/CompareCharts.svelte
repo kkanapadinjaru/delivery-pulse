@@ -46,14 +46,16 @@
   $: rankings = (() => {
     if (reports.length < 2) return [];
 
+    // Weight determines how much each metric contributes to the final ranking.
+    // Volume metrics (completed, PRs merged) are weighted higher.
     const metrics = [
-      { key: 'totalWorkedOn', label: 'Work Items', higher: true },
-      { key: 'resolved', label: 'Completed', higher: true },
-      { key: 'reopenRate', label: 'Reopen Rate', higher: false },
-      { key: 'avgResolutionDays', label: 'Avg Days', higher: false },
-      { key: 'prsMerged', label: 'PRs Merged', higher: true, nested: 'prMetrics' },
-      { key: 'avgPRCycleDays', label: 'PR Cycle', higher: false, nested: 'prMetrics' },
-      { key: 'actionableComments', label: 'Act. Comments', higher: false, nested: 'prMetrics' },
+      { key: 'totalWorkedOn', label: 'Work Items', higher: true, weight: 2 },
+      { key: 'resolved', label: 'Completed', higher: true, weight: 3 },
+      { key: 'reopenRate', label: 'Reopen Rate', higher: false, weight: 1 },
+      { key: 'avgResolutionDays', label: 'Avg Days', higher: false, weight: 1 },
+      { key: 'prsMerged', label: 'PRs Merged', higher: true, weight: 2, nested: 'prMetrics' },
+      { key: 'avgPRCycleDays', label: 'PR Cycle', higher: false, weight: 1, nested: 'prMetrics' },
+      { key: 'actionableComments', label: 'Act. Comments', higher: false, weight: 1, nested: 'prMetrics' },
     ];
 
     // For each metric, rank developers (1 = best)
@@ -74,15 +76,15 @@
       const indexed = values.map((v, i) => ({ v, i }));
       indexed.sort((a, b) => metric.higher ? b.v - a.v : a.v - b.v);
 
-      // Assign ranks (handle ties)
+      // Assign ranks (handle ties), multiply by weight
       let currentRank = 1;
       for (let j = 0; j < indexed.length; j++) {
         if (j > 0 && indexed[j].v !== indexed[j - 1].v) {
           currentRank = j + 1;
         }
         const devIdx = indexed[j].i;
-        scores[devIdx].totalScore += currentRank;
-        scores[devIdx].breakdown.push({ metric: metric.label, rank: currentRank });
+        scores[devIdx].totalScore += currentRank * metric.weight;
+        scores[devIdx].breakdown.push({ metric: metric.label, rank: currentRank, weight: metric.weight });
       }
     }
 
@@ -330,6 +332,17 @@
         <tr>
           <td>Actionable Comments</td>
           {#each reports as r}<td>{r.prMetrics?.actionableComments ?? '-'}</td>{/each}
+        </tr>
+        <tr class="section-break">
+          <td colspan="{reports.length + 1}" class="section-header">Composite Scores</td>
+        </tr>
+        <tr>
+          <td>Efficiency Score</td>
+          {#each reports as r}<td><strong>{r.scores?.efficiencyScore?.toFixed(1) ?? '-'}</strong>/100</td>{/each}
+        </tr>
+        <tr>
+          <td>Quality Score</td>
+          {#each reports as r}<td><strong>{r.scores?.qualityScore?.toFixed(1) ?? '-'}</strong>/100</td>{/each}
         </tr>
       </tbody>
     </table>

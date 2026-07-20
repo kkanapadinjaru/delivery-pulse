@@ -107,11 +107,117 @@
       </section>
 
       <section>
+        <h2>Compare Mode — Relative Ranking</h2>
+        <p>The ranking system scores each developer across weighted metrics. A lower total score = better overall performance.</p>
+        <div class="metric">
+          <h3>How it works</h3>
+          <p>For each metric, developers are ranked (1 = best). The rank is multiplied by the metric's weight, then all weighted ranks are summed. The developer with the lowest total is ranked #1.</p>
+        </div>
+        <div class="metric">
+          <h3>Metric Weights</h3>
+          <ul class="threshold-list">
+            <li><span class="dot" style="background:#206473"></span> <strong>Completed</strong> — 3× (highest priority: actual delivery)</li>
+            <li><span class="dot" style="background:#206473"></span> <strong>Work Items</strong> — 2× (volume of work touched)</li>
+            <li><span class="dot" style="background:#206473"></span> <strong>PRs Merged</strong> — 2× (code output)</li>
+            <li><span class="dot" style="background:#45a6bd"></span> <strong>Reopen Rate</strong> — 1× (quality signal)</li>
+            <li><span class="dot" style="background:#45a6bd"></span> <strong>Avg Days to Complete</strong> — 1× (speed)</li>
+            <li><span class="dot" style="background:#45a6bd"></span> <strong>PR Cycle Time</strong> — 1× (review speed)</li>
+            <li><span class="dot" style="background:#45a6bd"></span> <strong>Actionable Comments</strong> — 1× (review rework)</li>
+          </ul>
+          <p>This means volume/throughput accounts for 7 out of 11 total weight points, ensuring developers who deliver more work are ranked higher even if quality metrics are slightly worse.</p>
+        </div>
+      </section>
+
+      <section>
         <h2>How This Helps Assess Delivery Quality</h2>
         <p><strong>Throughput:</strong> Total Work Items + PRs Merged show volume of work processed.</p>
         <p><strong>Completion quality:</strong> Bounced Back + Actionable Comments show if work is complete on first attempt.</p>
         <p><strong>Responsiveness:</strong> Avg Days to Complete and Avg PR Cycle show turnaround speed.</p>
         <p><strong>Review engagement:</strong> Actionable Comments show how much feedback translates to code changes.</p>
+      </section>
+
+      <section>
+        <h2>Derived Insights (Single Report)</h2>
+
+        <div class="metric">
+          <h3>Time in State <span class="badge quality">Quality</span></h3>
+          <p>Average days work items spend in each workflow state (e.g., New, Active, Resolved). Calculated from state change history. Highlights bottlenecks — if items sit in "Active" for 15 days on average, that's a signal.</p>
+        </div>
+
+        <div class="metric">
+          <h3>Throughput Trend <span class="badge volume">Volume</span></h3>
+          <p>Items completed per week over the report period, shown as a bar chart. A completed item is one the developer handed off (first reassignment). Weeks align to Monday. Helps spot velocity dips or ramp-ups.</p>
+        </div>
+
+        <div class="metric">
+          <h3>PR Size Distribution <span class="badge quality">Quality</span></h3>
+          <p>PRs categorized by files changed: <strong>Small</strong> (&lt;50 files), <strong>Medium</strong> (50–150), <strong>Large</strong> (&gt;150). Large PRs are harder to review thoroughly and correlate with missed defects. Aim for mostly small PRs.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Composite Scores (Single Report &amp; Compare)</h2>
+
+        <div class="metric">
+          <h3>Efficiency Score <span class="badge volume">Volume</span></h3>
+          <p>0–100 score measuring delivery throughput over the reporting period. Formula: items resolved per week, boosted by a priority weight (more P1/P2 work gives up to 1.5× boost) and a speed bonus (avg resolution under 5 days gives up to 1.3× boost). A score of 100 means 5+ items/week at max weights. Longer reporting periods give more meaningful scores.</p>
+          <ul class="threshold-list">
+            <li><span class="dot" style="background:#0f9d58"></span> <strong>Excellent</strong> — 80–100</li>
+            <li><span class="dot" style="background:#4caf50"></span> <strong>Good</strong> — 60–79</li>
+            <li><span class="dot" style="background:#ff9800"></span> <strong>Fair</strong> — 40–59</li>
+            <li><span class="dot" style="background:#f44336"></span> <strong>Needs Attention</strong> — 0–39</li>
+          </ul>
+        </div>
+
+        <div class="metric">
+          <h3>Quality Score <span class="badge quality">Quality</span></h3>
+          <p>0–100 score measuring how cleanly work is delivered. Two components:</p>
+          <ul class="threshold-list">
+            <li><span class="dot" style="background:#206473"></span> <strong>70%</strong> — Inverse reopen rate (fewer bouncebacks = higher score)</li>
+            <li><span class="dot" style="background:#45a6bd"></span> <strong>30%</strong> — Low actionable comment rate (fewer reviewer-driven rework iterations = higher score)</li>
+          </ul>
+          <p>A score of 100 means zero bouncebacks and zero actionable review comments.</p>
+          <ul class="threshold-list">
+            <li><span class="dot" style="background:#0f9d58"></span> <strong>Excellent</strong> — 80–100</li>
+            <li><span class="dot" style="background:#4caf50"></span> <strong>Good</strong> — 60–79</li>
+            <li><span class="dot" style="background:#ff9800"></span> <strong>Fair</strong> — 40–59</li>
+            <li><span class="dot" style="background:#f44336"></span> <strong>Needs Attention</strong> — 0–39</li>
+          </ul>
+        </div>
+      </section>
+
+      <section>
+        <h2>Team Dashboard</h2>
+
+        <div class="metric">
+          <h3>Total Completed <span class="badge volume">Volume</span></h3>
+          <p>Deduplicated count of all work items completed (handed off) across the entire team in the date range. An item assigned to multiple developers is counted once.</p>
+        </div>
+
+        <div class="metric">
+          <h3>Work in Progress (WIP) <span class="badge quality">Quality</span></h3>
+          <p>Items currently assigned to team members that are not yet Closed, Resolved, or Done — and haven't been reassigned away. High team WIP correlates with context switching and slower delivery.</p>
+        </div>
+
+        <div class="metric">
+          <h3>Avg Cycle Time <span class="badge quality">Quality</span></h3>
+          <p>Average calendar days from first assignment to first handoff, across all completed items for the team. This is the team's delivery rhythm — lower is faster.</p>
+        </div>
+
+        <div class="metric">
+          <h3>Cycle Time Distribution <span class="badge quality">Quality</span></h3>
+          <p>Histogram of cycle times in buckets (0–2 days, 3–5, 6–10, 11–20, 21–30, 30+). Shows whether most work ships quickly or if there's a long tail of items taking weeks. Useful for predicting delivery timelines.</p>
+        </div>
+
+        <div class="metric">
+          <h3>WIP by Member <span class="badge quality">Quality</span></h3>
+          <p>Per-person breakdown of in-progress items. Identifies individuals who may be overloaded with concurrent work.</p>
+        </div>
+
+        <div class="metric">
+          <h3>Weekly Throughput <span class="badge volume">Volume</span></h3>
+          <p>Same as the single-report throughput trend, but aggregated across the whole team. Shows team-level delivery cadence over time.</p>
+        </div>
       </section>
     </div>
   </div>

@@ -9,9 +9,12 @@ import (
 // Settings represents the application configuration managed via the UI.
 type Settings struct {
 	Teams         []string `json:"teams"`
+	Developers    []string `json:"developers"`    // Allowlist of developer emails; if set, only these appear in reports
 	WorkItemTypes []string `json:"workItemTypes"`
 	AreaPaths     []string `json:"areaPaths"`
 	Activities    []string `json:"activities"`
+	PRSizeSmallMax  int    `json:"prSizeSmallMax"`  // Files threshold: <= this = Small
+	PRSizeMediumMax int    `json:"prSizeMediumMax"` // Files threshold: <= this = Medium, above = Large
 }
 
 // DefaultWorkItemTypes is the default set of work item types to query.
@@ -40,10 +43,13 @@ func NewStore(filePath string) *Store {
 	s := &Store{
 		filePath: filePath,
 		current: Settings{
-			Teams:         []string{},
-			WorkItemTypes: DefaultWorkItemTypes,
-			AreaPaths:     DefaultAreaPaths,
-			Activities:    DefaultActivities,
+			Teams:           []string{},
+			Developers:      []string{},
+			WorkItemTypes:   DefaultWorkItemTypes,
+			AreaPaths:       DefaultAreaPaths,
+			Activities:      DefaultActivities,
+			PRSizeSmallMax:  25,
+			PRSizeMediumMax: 100,
 		},
 	}
 	s.load()
@@ -66,6 +72,9 @@ func (s *Store) Update(settings Settings) error {
 	if settings.Teams == nil {
 		settings.Teams = []string{}
 	}
+	if settings.Developers == nil {
+		settings.Developers = []string{}
+	}
 	if settings.WorkItemTypes == nil {
 		settings.WorkItemTypes = DefaultWorkItemTypes
 	}
@@ -74,6 +83,12 @@ func (s *Store) Update(settings Settings) error {
 	}
 	if settings.Activities == nil {
 		settings.Activities = DefaultActivities
+	}
+	if settings.PRSizeSmallMax <= 0 {
+		settings.PRSizeSmallMax = 25
+	}
+	if settings.PRSizeMediumMax <= 0 {
+		settings.PRSizeMediumMax = 100
 	}
 
 	s.current = settings
@@ -94,6 +109,9 @@ func (s *Store) load() {
 	if loaded.Teams != nil {
 		s.current.Teams = loaded.Teams
 	}
+	if loaded.Developers != nil {
+		s.current.Developers = loaded.Developers
+	}
 	if loaded.WorkItemTypes != nil && len(loaded.WorkItemTypes) > 0 {
 		s.current.WorkItemTypes = loaded.WorkItemTypes
 	}
@@ -102,6 +120,12 @@ func (s *Store) load() {
 	}
 	if loaded.Activities != nil && len(loaded.Activities) > 0 {
 		s.current.Activities = loaded.Activities
+	}
+	if loaded.PRSizeSmallMax > 0 {
+		s.current.PRSizeSmallMax = loaded.PRSizeSmallMax
+	}
+	if loaded.PRSizeMediumMax > 0 {
+		s.current.PRSizeMediumMax = loaded.PRSizeMediumMax
 	}
 }
 
