@@ -31,6 +31,7 @@ func main() {
 	project := os.Getenv("ADO_PROJECT")
 	port := os.Getenv("SERVER_PORT")
 	teamsEnv := os.Getenv("ADO_TEAMS")
+	developersEnv := os.Getenv("ADO_DEVELOPERS")
 	clientID := os.Getenv("ADO_CLIENT_ID")
 	clientSecret := os.Getenv("ADO_CLIENT_SECRET")
 	tenantID := os.Getenv("ADO_TENANT_ID")
@@ -59,6 +60,17 @@ func main() {
 		}
 	}
 
+	// Parse comma-separated developer emails from env (used as initial default)
+	var envDevelopers []string
+	if developersEnv != "" {
+		for _, d := range strings.Split(developersEnv, ",") {
+			d = strings.TrimSpace(d)
+			if d != "" {
+				envDevelopers = append(envDevelopers, d)
+			}
+		}
+	}
+
 	// Initialize settings store
 	execPath, _ := os.Executable()
 	settingsDir := filepath.Dir(execPath)
@@ -67,16 +79,26 @@ func main() {
 
 	// If settings file has no teams but env does, seed from env
 	currentSettings := store.Get()
+	seeded := false
 	if len(currentSettings.Teams) == 0 && len(envTeams) > 0 {
 		currentSettings.Teams = envTeams
+		seeded = true
+	}
+	if len(currentSettings.Developers) == 0 && len(envDevelopers) > 0 {
+		currentSettings.Developers = envDevelopers
+		seeded = true
+	}
+	if seeded {
 		_ = store.Update(currentSettings)
 	}
 
 	client := ado.NewClient(orgURL, tenantID, clientID, clientSecret, project, logger)
 	client.SetTeams(store.Get().Teams)
+	client.SetDevelopers(store.Get().Developers)
 	client.SetWorkItemTypes(store.Get().WorkItemTypes)
 	client.SetAreaPaths(store.Get().AreaPaths)
 	client.SetActivities(store.Get().Activities)
+	client.SetPRSizeThresholds(store.Get().PRSizeSmallMax, store.Get().PRSizeMediumMax)
 
 	router := api.NewRouter(client, store, logger)
 

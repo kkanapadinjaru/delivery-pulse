@@ -34,8 +34,13 @@
   let selectedTypes = [];
   let selectedAreaPaths = [];
   let selectedActivities = [];
+  let selectedDevelopers = [];
   let availableAreaPaths = [];
+  let availableDevelopers = [];
+  let devSearchQuery = '';
   let newActivityInput = '';
+  let prSizeSmallMax = 25;
+  let prSizeMediumMax = 100;
   let loading = true;
   let saving = false;
   let error = '';
@@ -43,13 +48,16 @@
   let showTypeDropdown = false;
   let showAreaPathDropdown = false;
   let showActivityDropdown = false;
+  let showDevDropdown = false;
+  let devSearchInput;
   let loadingAreaPaths = false;
 
   onMount(async () => {
     try {
-      const [settingsResp, areaPathsResp] = await Promise.all([
+      const [settingsResp, areaPathsResp, allDevsResp] = await Promise.all([
         fetch('/api/settings'),
         fetch('/api/areapaths'),
+        fetch('/api/all-developers'),
       ]);
 
       if (!settingsResp.ok) throw new Error('Failed to load settings');
@@ -58,10 +66,18 @@
       selectedTypes = data.workItemTypes || ['Bug', 'Task'];
       selectedAreaPaths = data.areaPaths || [];
       selectedActivities = data.activities || ['Development', 'Testing', 'Requirements'];
+      selectedDevelopers = data.developers || [];
+      prSizeSmallMax = data.prSizeSmallMax || 25;
+      prSizeMediumMax = data.prSizeMediumMax || 100;
 
       if (areaPathsResp.ok) {
         const apData = await areaPathsResp.json();
         availableAreaPaths = apData.areaPaths || [];
+      }
+
+      if (allDevsResp.ok) {
+        const devData = await allDevsResp.json();
+        availableDevelopers = (devData.developers || []).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
       }
     } catch (e) {
       error = e.message;
@@ -114,6 +130,31 @@
     newActivityInput = '';
   }
 
+  function toggleDeveloper(dev) {
+    if (selectedDevelopers.includes(dev)) {
+      selectedDevelopers = selectedDevelopers.filter(d => d !== dev);
+    } else {
+      selectedDevelopers = [...selectedDevelopers, dev];
+    }
+  }
+
+  function removeDeveloper(dev) {
+    selectedDevelopers = selectedDevelopers.filter(d => d !== dev);
+  }
+
+  function shortEmail(email) {
+    const local = email.split('@')[0] || email;
+    return local.split('.').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
+  }
+
+  $: filteredAvailableDevs = availableDevelopers
+    .filter(d => !selectedDevelopers.includes(d))
+    .filter(d => {
+      if (!devSearchQuery) return true;
+      const q = devSearchQuery.toLowerCase();
+      return d.toLowerCase().includes(q) || shortEmail(d).toLowerCase().includes(q);
+    });
+
   function handleActivityKeydown(e) {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -137,9 +178,12 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           teams: teamsList,
+          developers: selectedDevelopers,
           workItemTypes: selectedTypes,
           areaPaths: selectedAreaPaths,
           activities: selectedActivities,
+          prSizeSmallMax: parseInt(prSizeSmallMax) || 25,
+          prSizeMediumMax: parseInt(prSizeMediumMax) || 100,
         }),
       });
 
@@ -184,6 +228,54 @@
           bind:value={teams}
           placeholder="e.g. Team Alpha, Team Beta"
         />
+      </div>
+
+      <div class="setting-group">
+        <label>Developers</label>
+        <p class="help-text">Select which team members to include in reports. Leave empty to include all members from the configured teams.</p>
+
+        <div class="selected-types">
+          {#each selectedDevelopers as dev}
+            <span class="type-tag" title={dev}>
+              {shortEmail(dev)}
+              <button type="button" class="remove-tag" on:click={() => removeDeveloper(dev)} aria-label="Remove {dev}">&times;</button>
+            </span>
+          {/each}
+          {#if selectedDevelopers.length === 0}
+            <span class="no-types">No filter (all team members included)</span>
+          {/if}
+        </div>
+
+        <div class="type-dropdown-wrapper">
+          <button
+            type="button"
+            class="dropdown-trigger"
+            on:click={() => { showDevDropdown = !showDevDropdown; devSearchQuery = ''; setTimeout(() => devSearchInput?.focus(), 0); }}
+          >
+            Add developer...
+          </button>
+          {#if showDevDropdown}
+            <div class="type-dropdown area-dropdown" on:mouseleave={() => {}} on:focusout={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) showDevDropdown = false; }}>
+              <div class="search-input-item">
+                <input
+                  type="text"
+                  bind:this={devSearchInput}
+                  bind:value={devSearchQuery}
+                  placeholder="Search by name or email..."
+                  class="dropdown-search"
+                />
+              </div>
+              <ul class="dropdown-list-inner">
+                {#each filteredAvailableDevs as dev}
+                  <li on:mousedown={() => toggleDeveloper(dev)} title={dev}>{shortEmail(dev)} <span class="dev-email">({dev})</span></li>
+                {/each}
+                {#if filteredAvailableDevs.length === 0}
+                  <li class="empty-item">{devSearchQuery ? 'No matches' : 'All developers selected'}</li>
+                {/if}
+              </ul>
+            </div>
+          {/if}
+        </div>
       </div>
 
       <div class="setting-group">
@@ -304,6 +396,24 @@
               </li>
             </ul>
           {/if}
+        </div>
+      </div>
+
+      <div class="setting-group">
+        <label>PR Size Thresholds</label>
+        <p class="help-text">Configure file-count boundaries for PR size categories used in reports.</p>
+        <div class="threshold-inputs">
+          <div class="threshold-field">
+            <label for="pr-small">Small (up to)</label>
+            <input id="pr-small" type="number" min="1" bind:value={prSizeSmallMax} />
+            <span class="threshold-unit">files</span>
+          </div>
+          <div class="threshold-field">
+            <label for="pr-medium">Medium (up to)</label>
+            <input id="pr-medium" type="number" min="1" bind:value={prSizeMediumMax} />
+            <span class="threshold-unit">files</span>
+          </div>
+          <div class="threshold-note">Large = above {prSizeMediumMax} files</div>
         </div>
       </div>
 
@@ -472,6 +582,108 @@
   .area-dropdown {
     min-width: 320px;
     max-height: 280px;
+  }
+
+  .dev-email {
+    font-size: 0.72rem;
+    color: #888;
+  }
+
+  .search-input-item {
+    padding: 0.4rem 0.5rem;
+    border-bottom: 1px solid #e2e8f0;
+    cursor: default;
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 1;
+  }
+
+  .search-input-item:hover {
+    background: white !important;
+    color: inherit !important;
+  }
+
+  .dropdown-search {
+    width: 100%;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid #d0d5dd;
+    border-radius: 4px;
+    font-size: 0.82rem;
+    box-sizing: border-box;
+  }
+
+  .threshold-inputs {
+    display: flex;
+    gap: 1.5rem;
+    align-items: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .threshold-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .threshold-field label {
+    font-size: 0.78rem;
+    color: #666;
+    font-weight: 500;
+  }
+
+  .threshold-field input {
+    width: 80px;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid #d0d5dd;
+    border-radius: 6px;
+    font-size: 0.85rem;
+  }
+
+  .threshold-unit {
+    font-size: 0.72rem;
+    color: #888;
+  }
+
+  .threshold-note {
+    font-size: 0.78rem;
+    color: #666;
+    align-self: center;
+  }
+
+  .dropdown-list-inner {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+
+  .dropdown-list-inner li {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f0f0;
+  }
+
+  .dropdown-list-inner li:last-child {
+    border-bottom: none;
+  }
+
+  .dropdown-list-inner li:hover {
+    background: #e8f4f7;
+    color: #206473;
+  }
+
+  .dropdown-list-inner .empty-item {
+    color: #999;
+    font-style: italic;
+    cursor: default;
+  }
+
+  .dropdown-list-inner .empty-item:hover {
+    background: none;
+    color: #999;
   }
 
   .type-dropdown li {

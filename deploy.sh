@@ -222,6 +222,16 @@ secretfile="$(mktemp)"
 trap 'rm -f "$secretfile"' EXIT
 printf '%s' "$secret_value" > "$secretfile"
 
+# Read developers list from file (one email per line, comments/blanks ignored)
+developers_file="$SCRIPT_DIR/developers.txt"
+developers_csv=""
+if [ -f "$developers_file" ]; then
+  developers_csv=$(grep -v '^\s*#' "$developers_file" | grep -v '^\s*$' | tr '\n' ',' | sed 's/,$//')
+  if [ -n "$developers_csv" ]; then
+    echo "  ${col_cyan}Developers:${col_nc} $(echo "$developers_csv" | tr ',' '\n' | wc -l | tr -d ' ') entries from developers.txt"
+  fi
+fi
+
 # Build helm args — clean and minimal, all env-specific config lives in the values file
 helm_args=(
   "$action" "$STACK_NAME"
@@ -234,6 +244,12 @@ helm_args=(
 # Secret via --set-file so it never appears in process args
 if [ -s "$secretfile" ]; then
   helm_args+=(--set-file "secrets.adoClientSecret=$secretfile")
+fi
+
+# Developers list via --set-string (commas escaped for helm)
+if [ -n "$developers_csv" ]; then
+  escaped_devs="${developers_csv//,/\\,}"
+  helm_args+=(--set "config.adoDevelopers=$escaped_devs")
 fi
 
 # Dry-run mode

@@ -23,9 +23,12 @@ type Client struct {
 	tokenProv  *tokenProvider
 	project    string
 	teams      []string // configured team names to load developers from
+	developers []string // allowlist of developer emails; if set, only these are returned
 	workItemTypes []string // configured work item types to query
 	areaPaths     []string // configured area paths to scope work items
 	activities    []string // configured activity types to filter by
+	prSizeSmallMax  int    // PR size bucket threshold: <= this = Small
+	prSizeMediumMax int    // PR size bucket threshold: <= this = Medium
 	// developerIDs maps uniqueName (email) to their ADO identity GUID
 	developerIDs map[string]string
 	httpClient   *http.Client
@@ -60,6 +63,20 @@ func (c *Client) SetTeams(teams []string) {
 	c.InvalidateDeveloperCache()
 }
 
+// SetDevelopers sets an explicit allowlist of developer emails.
+// When non-empty, GetDevelopers returns only these users (intersected with actual team members).
+// Invalidates the developer cache.
+func (c *Client) SetDevelopers(devs []string) {
+	c.developers = devs
+	c.InvalidateDeveloperCache()
+}
+
+// GetAllDevelopers returns ALL team members without applying the developer allowlist.
+// Used by the Settings page to show the full list for selection.
+func (c *Client) GetAllDevelopers() ([]string, error) {
+	return c.fetchDevelopersFromAPI()
+}
+
 // InvalidateDeveloperCache forces the next GetDevelopers call to fetch fresh data.
 func (c *Client) InvalidateDeveloperCache() {
 	c.cacheMu.Lock()
@@ -88,6 +105,12 @@ func (c *Client) SetAreaPaths(paths []string) {
 // If empty, no activity filter is applied.
 func (c *Client) SetActivities(activities []string) {
 	c.activities = activities
+}
+
+// SetPRSizeThresholds configures the file-count thresholds for PR size buckets.
+func (c *Client) SetPRSizeThresholds(smallMax, mediumMax int) {
+	c.prSizeSmallMax = smallMax
+	c.prSizeMediumMax = mediumMax
 }
 
 // WorkItem represents a simplified Azure DevOps work item.
@@ -134,6 +157,11 @@ type DeveloperReport struct {
 	WorkItems        []WorkItem     `json:"workItems"`
 	PRMetrics        *PRMetrics     `json:"prMetrics,omitempty"`
 	PRDetails        []PRDetail     `json:"prDetails,omitempty"`
+	// New metrics
+	TimeInState      []TimeInState    `json:"timeInState,omitempty"`
+	ThroughputTrend  []ThroughputWeek `json:"throughputTrend,omitempty"`
+	PRSizeBuckets    *PRSizeBuckets   `json:"prSizeBuckets,omitempty"`
+	Scores           *Scores          `json:"scores,omitempty"`
 }
 
 // PRDetail represents a single pull request with its linked work item IDs.
@@ -144,6 +172,7 @@ type PRDetail struct {
 	Repository    string    `json:"repository"`
 	CreatedDate   string    `json:"createdDate"`
 	ClosedDate    string    `json:"closedDate,omitempty"`
+	FilesChanged  int       `json:"filesChanged"`
 	LinkedWorkItemIDs []int `json:"linkedWorkItemIds,omitempty"`
 }
 
@@ -371,6 +400,7 @@ type teamMembersResponse struct {
 }
 
 // GetDevelopers returns a list of team members from the configured teams.
+// If a developer allowlist is configured, only those emails are returned.
 // Uses uniqueName (email) for consistent formatting and filters out groups.
 // Results are cached until InvalidateDeveloperCache is called.
 func (c *Client) GetDevelopers() ([]string, error) {
@@ -383,9 +413,26 @@ func (c *Client) GetDevelopers() ([]string, error) {
 	}
 	c.cacheMu.RUnlock()
 
-	developers, err := c.fetchDevelopersFromAPI()
+	// Always fetch from API to populate developerIDs cache (needed for PR queries)
+	allDevs, err := c.fetchDevelopersFromAPI()
 	if err != nil {
 		return nil, err
+	}
+
+	// Apply developer allowlist filter if configured
+	var developers []string
+	if len(c.developers) > 0 {
+		allowSet := make(map[string]bool)
+		for _, d := range c.developers {
+			allowSet[strings.ToLower(d)] = true
+		}
+		for _, dev := range allDevs {
+			if allowSet[strings.ToLower(dev)] {
+				developers = append(developers, dev)
+			}
+		}
+	} else {
+		developers = allDevs
 	}
 
 	c.cacheMu.Lock()
@@ -531,6 +578,32 @@ func (c *Client) GetDeveloperReport(developer, from, to string) (*DeveloperRepor
 		report.PRMetrics = prMetrics
 		report.PRDetails = prDetails
 	}
+
+	// Compute derived metrics
+	report.TimeInState = computeTimeInState(workItems)
+	report.ThroughputTrend = computeThroughputTrend(workItems, from, to)
+
+	// PR size buckets (from per-PR file counts)
+	if len(report.PRDetails) > 0 {
+		filesPerPR := make(map[int]int)
+		for _, pr := range report.PRDetails {
+			filesPerPR[pr.ID] = pr.FilesChanged
+		}
+		smallMax := c.prSizeSmallMax
+		mediumMax := c.prSizeMediumMax
+		if smallMax <= 0 {
+			smallMax = 25
+		}
+		if mediumMax <= 0 {
+			mediumMax = 100
+		}
+		buckets := computePRSizeBuckets(report.PRDetails, filesPerPR, smallMax, mediumMax)
+		report.PRSizeBuckets = &buckets
+	}
+
+	// Composite scores (for compare mode)
+	scores := computeScores(report)
+	report.Scores = &scores
 
 	return report, nil
 }
@@ -1189,6 +1262,7 @@ func (c *Client) GetPRMetrics(developer, from, to string) (*PRMetrics, []PRDetai
 		metrics.TotalCommits += r.commits
 		metrics.FilesChanged += r.filesChanged
 		metrics.ActionableComments += r.actionable
+		details[r.idx].FilesChanged = r.filesChanged
 		if len(r.linkedWorkItems) > 0 {
 			details[r.idx].LinkedWorkItemIDs = r.linkedWorkItems
 		}

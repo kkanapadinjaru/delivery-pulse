@@ -1,0 +1,20 @@
+# Developer emails — one per line
+# Used by deploy.sh to set ADO_DEVELOPERS in the deployment
+# Lines starting with # are ignored
+andrew.wenczel@solvassolutions.com
+palak.shah@solvassolutions.com
+Jyothsna.Kolakaluri@solvassolutions.com
+david.lee@solvassolutions.com
+Stephen.Caffo@solvassolutions.com
+Kiran.KanaPadinjaru@solvassolutions.com
+Avinash.Singh@solvassolutions.com
+Nasiruddin.Khan@solvassolutions.com
+Narendar.Pathipati@solvassolutions.com
+SumaSree.Mandava@solvassolutions.com
+Garima.Singh@solvassolutions.com
+Dmitriy.Lodvikov@solvassolutions.com
+naman.aggarwal@solvassolutions.com
+prathyusha.kottu@solvassolutions.com
+rahul.dutta@solvassolutions.com
+Hrithik.Kumar@solvassolutions.com
+souvik.kapri@solvassolutions.com
