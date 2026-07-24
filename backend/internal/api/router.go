@@ -7,40 +7,66 @@ import (
 	"time"
 
 	"github.com/delivery-pulse/backend/internal/ado"
+	"github.com/delivery-pulse/backend/internal/auth"
 	"github.com/delivery-pulse/backend/internal/settings"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 )
 
+// RouterConfig holds the dependencies needed by the router.
+type RouterConfig struct {
+	Client            *ado.Client
+	Store             *settings.Store
+	Logger            *slog.Logger
+	AuthMiddleware    *auth.Middleware
+	LocalDev          bool
+	KeycloakPublicURL string
+}
+
 // NewRouter creates the HTTP router with all API routes.
-func NewRouter(client *ado.Client, store *settings.Store, logger *slog.Logger) http.Handler {
+func NewRouter(cfg RouterConfig) http.Handler {
 	r := chi.NewRouter()
 
 	// Middleware
-	r.Use(slogRequestLogger(logger))
+	r.Use(slogRequestLogger(cfg.Logger))
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:5180", "http://localhost:5173", "http://localhost:3000", "*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Content-Type"},
-		AllowCredentials: false,
+		AllowedHeaders:   []string{"Accept", "Content-Type", "Authorization"},
+		AllowCredentials: true,
 		MaxAge:           300,
 	}))
 
-	h := &handler{client: client, settings: store, logger: logger.With("component", "api")}
+	h := &handler{
+		client:            cfg.Client,
+		settings:          cfg.Store,
+		logger:            cfg.Logger.With("component", "api"),
+		localDev:          cfg.LocalDev,
+		keycloakPublicURL: cfg.KeycloakPublicURL,
+	}
 
-	r.Route("/api", func(r chi.Router) {
-		r.Get("/health", h.health)
-		r.Get("/developers", h.getDevelopers)
-		r.Get("/all-developers", h.getAllDevelopers)
-		r.Get("/report", h.getReport)
-		r.Get("/workitems", h.getWorkItems)
-		r.Get("/areapaths", h.getAreaPaths)
-		r.Get("/team-dashboard", h.getTeamDashboard)
-		r.Get("/settings", h.getSettings)
-		r.Put("/settings", h.updateSettings)
+	// Unauthenticated endpoints
+	r.Get("/api/health", h.health)
+	r.Get("/api/config", h.getConfig)
+
+	// All other /api routes require a valid JWT (or mock user in LOCAL_DEV)
+	r.Group(func(r chi.Router) {
+		r.Use(cfg.AuthMiddleware.Handler)
+
+		r.Get("/api/me", h.getMe)
+		r.Get("/api/developers", h.getDevelopers)
+		r.Get("/api/all-developers", h.getAllDevelopers)
+		r.Get("/api/report", h.getReport)
+		r.Get("/api/workitems", h.getWorkItems)
+		r.Get("/api/areapaths", h.getAreaPaths)
+		r.Get("/api/settings", h.getSettings)
+
+		// Manager-only endpoints
+		r.With(auth.RequireRole(auth.RoleManager)).Get("/api/team-dashboard", h.getTeamDashboard)
+		r.With(auth.RequireRole(auth.RoleManager)).Put("/api/settings", h.updateSettings)
 	})
 
 	return r
@@ -80,13 +106,32 @@ func slogRequestLogger(logger *slog.Logger) func(next http.Handler) http.Handler
 }
 
 type handler struct {
-	client   *ado.Client
-	settings *settings.Store
-	logger   *slog.Logger
+	client            *ado.Client
+	settings          *settings.Store
+	logger            *slog.Logger
+	localDev          bool
+	keycloakPublicURL string
 }
 
 func (h *handler) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *handler) getConfig(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"localDev":    h.localDev,
+		"keycloakUrl": h.keycloakPublicURL,
+		"clientId":    "delivery-pulse-ui",
+	})
+}
+
+func (h *handler) getMe(w http.ResponseWriter, r *http.Request) {
+	u := auth.FromContext(r.Context())
+	if u == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not authenticated"})
+		return
+	}
+	writeJSON(w, http.StatusOK, u)
 }
 
 func (h *handler) getDevelopers(w http.ResponseWriter, r *http.Request) {

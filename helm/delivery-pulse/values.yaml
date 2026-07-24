@@ -83,6 +83,10 @@ config:
   # Service Principal identifiers (non-secret)
   adoTenantId: "ad0d7321-4227-49b4-b8c9-81fcf1038281"
   adoClientId: "62633ca8-4d86-441c-855d-88a0a2d15e5f"
+  # Authentication (Keycloak) — set per-environment in values-local.yaml / values-dev.yaml
+  localDev: "false"
+  keycloakAuthority: ""
+  keycloakPublicUrl: ""
 
 # Secrets (passed via --set-file in deploy script, never in plain text)
 secrets:

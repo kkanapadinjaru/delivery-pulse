@@ -12,3 +12,6 @@ data:
   ADO_TENANT_ID: {{ .Values.config.adoTenantId | quote }}
   ADO_CLIENT_ID: {{ .Values.config.adoClientId | quote }}
   SERVER_PORT: {{ .Values.server.containerPort | quote }}
+  LOCAL_DEV: {{ .Values.config.localDev | quote }}
+  KEYCLOAK_AUTHORITY: {{ .Values.config.keycloakAuthority | quote }}
+  KEYCLOAK_PUBLIC_URL: {{ .Values.config.keycloakPublicUrl | quote }}

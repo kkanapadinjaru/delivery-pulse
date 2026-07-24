@@ -2,6 +2,8 @@
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   const dispatch = createEventDispatcher();
 
+  export let isManager = false;
+
   onMount(() => {
     document.body.style.overflow = 'hidden';
   });
@@ -106,6 +108,7 @@
         </div>
       </section>
 
+      {#if isManager}
       <section>
         <h2>Compare Mode — Relative Ranking</h2>
         <p>The ranking system scores each developer across weighted metrics. A lower total score = better overall performance.</p>
@@ -219,6 +222,7 @@
           <p>Same as the single-report throughput trend, but aggregated across the whole team. Shows team-level delivery cadence over time.</p>
         </div>
       </section>
+      {/if}
     </div>
   </div>
 </div>

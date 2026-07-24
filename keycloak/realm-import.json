@@ -1,0 +1,52 @@
+{
+  "realm": "delivery-pulse",
+  "displayName": "Delivery Pulse",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "roles": {
+    "realm": [
+      {
+        "name": "PulseDeveloper",
+        "description": "Can view own performance report only",
+        "composite": false,
+        "clientRole": false
+      },
+      {
+        "name": "PulseManager",
+        "description": "Full access: view all reports, compare developers, team dashboard, manage settings",
+        "composite": false,
+        "clientRole": false
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "delivery-pulse-ui",
+      "name": "Delivery Pulse UI",
+      "description": "Svelte SPA — public OIDC client with PKCE",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "redirectUris": [
+        "http://localhost:30080/*",
+        "http://localhost:5180/*",
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:30080",
+        "http://localhost:5180",
+        "http://localhost:5173"
+      ]
+    }
+  ]
+}

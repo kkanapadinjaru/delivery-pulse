@@ -1,0 +1,14 @@
+# values.dev.yaml — AKS cluster with Azure Application Gateway (manual config)
+# Used by: deploy.sh install dev
+
+config:
+  keycloakAuthority: "http://acr-manager-fabric-keycloak-service.solvas-docs.svc.cluster.local:8080/auth/realms/delivery-pulse"
+  keycloakPublicUrl: "https://authnp.solvasfabric.com/auth"
+
+ui:
+  service:
+    type: LoadBalancer
+    annotations:
+      # Reserved internal IP for the App Gateway backend pool
+      service.beta.kubernetes.io/azure-load-balancer-ipv4: "10.60.33.175"
+      service.beta.kubernetes.io/azure-load-balancer-internal: "true"
