@@ -44,7 +44,7 @@ STACK_NAME="delivery-pulse"
 
 # Kubectl contexts per environment
 declare -A CONTEXTS=( [local]="docker-desktop" [dev]="aks-eus-nonprd-shared-01" )
-declare -A NAMESPACES=( [local]="delivery-pulse" [dev]="delivery-pulse" )
+declare -A NAMESPACES=( [local]="delivery-pulse" [dev]="solvas-docs" )
 
 # ---------------------------------------------------------------------------
 # Functions
@@ -63,9 +63,9 @@ Commands:
 
 Environments:
   local   Docker Desktop Kubernetes (default).
-          Values file: helm/delivery-pulse/values-local.yaml
+          Values file: helm/delivery-pulse/values.local.yaml
   dev     AKS cluster with Azure App Gateway.
-          Values file: helm/delivery-pulse/values-dev.yaml
+          Values file: helm/delivery-pulse/values.dev.yaml
 
 Options:
   --test, -t   Helm dry-run only (no changes applied).
@@ -149,7 +149,7 @@ done
 # Resolve environment-specific values
 context="${CONTEXTS[$env_label]}"
 namespace="${NAMESPACES[$env_label]}"
-values_file="$CHART_DIR/values-${env_label}.yaml"
+values_file="$CHART_DIR/values.${env_label}.yaml"
 
 # ---------------------------------------------------------------------------
 # Pre-flight checks
@@ -237,9 +237,13 @@ helm_args=(
   "$action" "$STACK_NAME"
   "$CHART_DIR"
   --namespace "$namespace"
-  --create-namespace
   -f "$values_file"
 )
+
+# Only create namespace for local (we don't have permission in AKS)
+if [ "$env_label" == "local" ]; then
+  helm_args+=(--create-namespace)
+fi
 
 # Secret via --set-file so it never appears in process args
 if [ -s "$secretfile" ]; then

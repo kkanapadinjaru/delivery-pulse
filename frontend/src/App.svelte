@@ -13,6 +13,13 @@
   import SettingsPage from './components/SettingsPage.svelte';
   import TeamDashboard from './components/TeamDashboard.svelte';
   import { fetchDevelopers, fetchReport, fetchWorkItems } from './api.js';
+  import { logout } from './lib/keycloak.js';
+
+  // currentUser is passed as a prop from main.js after authentication
+  export let currentUser = null;
+
+  $: isManager = currentUser?.roles?.includes('PulseManager') || false;
+  $: userEmail = currentUser?.email || '';
 
   let page = 'main'; // 'main' or 'settings'
   let mode = 'single'; // 'single', 'compare', or 'team'
@@ -60,12 +67,43 @@
     try {
       const devs = await fetchDevelopers();
       developers = devs.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+      // For developer role: auto-select their own email and load report
+      if (!isManager && userEmail) {
+        filterSelectedDeveloper = userEmail;
+        filterSearchQuery = userEmail;
+        // Auto-load their report
+        autoLoadDeveloperReport();
+      }
     } catch (e) {
       devsError = 'Could not load developers. Check backend connection.';
     } finally {
       devsLoading = false;
     }
   })();
+
+  async function autoLoadDeveloperReport() {
+    developer = userEmail;
+    fromDate = filterFromDate;
+    toDate = filterToDate;
+    loading = true;
+    error = '';
+    report = null;
+    workItems = [];
+
+    try {
+      const [reportData, itemsData] = await Promise.all([
+        fetchReport(userEmail, fromDate, toDate),
+        fetchWorkItems(userEmail, fromDate, toDate),
+      ]);
+      report = reportData;
+      workItems = itemsData.workItems || [];
+    } catch (e) {
+      error = e.message || 'Failed to fetch report';
+    } finally {
+      loading = false;
+    }
+  }
 
   async function handleSearch(event) {
     developer = event.detail.developer;
@@ -126,22 +164,25 @@
 </script>
 
 <main>
-  <Header on:openhelp={() => showHelp = true} on:opensettings={() => page = 'settings'} />
+  <Header on:openhelp={() => showHelp = true} on:opensettings={() => page = 'settings'} {currentUser} {isManager} on:logout={logout} />
   <div class="container">
-    {#if page === 'settings'}
+    {#if page === 'settings' && isManager}
       <SettingsPage on:back={() => page = 'main'} on:saved={handleSettingsSaved} />
     {:else}
+    {#if isManager}
     <div class="mode-toggle">
       <button class:active={mode === 'single'} on:click={() => mode = 'single'}>Single Report</button>
       <button class:active={mode === 'compare'} on:click={() => mode = 'compare'}>Compare</button>
       <button class:active={mode === 'team'} on:click={() => mode = 'team'}>Team</button>
     </div>
+    {/if}
 
     {#if (mode === 'single' && report) || (mode === 'compare' && compareReports.length >= 2) || (mode === 'team')}
       <button class="export-btn" on:click={exportPDF}>Export PDF</button>
     {/if}
 
     {#if mode === 'single'}
+      {#if isManager}
       <FilterPanel
         {developers} {devsLoading} {devsError}
         bind:selectedDeveloper={filterSelectedDeveloper}
@@ -150,6 +191,18 @@
         bind:toDate={filterToDate}
         on:search={handleSearch}
       />
+      {:else}
+      <!-- Developer role: date-only filter, auto-uses their email -->
+      <div class="dev-date-filter">
+        <p class="dev-greeting">Your Performance Report</p>
+        <div class="dev-date-controls">
+          <input type="date" bind:value={filterFromDate} />
+          <span class="date-sep">to</span>
+          <input type="date" bind:value={filterToDate} />
+          <button class="refresh-btn" on:click={autoLoadDeveloperReport}>Load Report</button>
+        </div>
+      </div>
+      {/if}
 
       {#if loading}
         <div class="loading">
@@ -209,7 +262,7 @@
   </div>
 
   {#if showHelp}
-    <HelpModal on:close={() => showHelp = false} />
+    <HelpModal on:close={() => showHelp = false} {isManager} />
   {/if}
 </main>
 
@@ -304,6 +357,53 @@
   .export-btn:hover {
     background: #e8f4f7;
   }
+
+  .dev-date-filter {
+    background: white;
+    border-radius: 10px;
+    padding: 1.5rem 2rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 1px 4px rgba(46, 58, 61, 0.08), 0 4px 16px rgba(46, 58, 61, 0.06);
+  }
+
+  .dev-greeting {
+    font-family: 'Manrope', 'Inter', system-ui, sans-serif;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #206473;
+    margin-bottom: 1rem;
+  }
+
+  .dev-date-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .dev-date-controls input {
+    padding: 0.4rem 0.6rem;
+    border: 1px solid #d0d5dd;
+    border-radius: 6px;
+    font-size: 0.85rem;
+  }
+
+  .date-sep {
+    font-size: 0.8rem;
+    color: #666;
+  }
+
+  .refresh-btn {
+    padding: 0.4rem 1rem;
+    background: #206473;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .refresh-btn:hover { background: #185364; }
 
   /* Print styles */
   @media print {

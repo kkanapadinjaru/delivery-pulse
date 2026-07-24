@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import { getAuthHeaders } from '../api.js';
 
   let from = '';
   let to = '';
@@ -46,7 +47,7 @@
 
     try {
       const params = new URLSearchParams({ from, to });
-      const resp = await fetch(`/api/team-dashboard?${params}`);
+      const resp = await fetch(`/api/team-dashboard?${params}`, { headers: getAuthHeaders() });
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}));
         throw new Error(data.error || `Request failed (${resp.status})`);

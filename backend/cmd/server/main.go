@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/delivery-pulse/backend/internal/api"
 	"github.com/delivery-pulse/backend/internal/ado"
+	"github.com/delivery-pulse/backend/internal/auth"
 	"github.com/delivery-pulse/backend/internal/settings"
 	"github.com/joho/godotenv"
 )
@@ -35,6 +37,9 @@ func main() {
 	clientID := os.Getenv("ADO_CLIENT_ID")
 	clientSecret := os.Getenv("ADO_CLIENT_SECRET")
 	tenantID := os.Getenv("ADO_TENANT_ID")
+	localDev, _ := strconv.ParseBool(os.Getenv("LOCAL_DEV"))
+	keycloakAuthority := os.Getenv("KEYCLOAK_AUTHORITY")
+	keycloakPublicURL := os.Getenv("KEYCLOAK_PUBLIC_URL")
 
 	if orgURL == "" || project == "" {
 		logger.Error("missing required environment variables", "required", "ADO_ORG_URL, ADO_PROJECT")
@@ -42,6 +47,10 @@ func main() {
 	}
 	if clientID == "" || clientSecret == "" || tenantID == "" {
 		logger.Error("missing required environment variables", "required", "ADO_CLIENT_ID, ADO_CLIENT_SECRET, ADO_TENANT_ID")
+		os.Exit(1)
+	}
+	if !localDev && (keycloakAuthority == "" || keycloakPublicURL == "") {
+		logger.Error("missing required environment variables", "required", "KEYCLOAK_AUTHORITY, KEYCLOAK_PUBLIC_URL (set LOCAL_DEV=true to skip)")
 		os.Exit(1)
 	}
 
@@ -100,7 +109,17 @@ func main() {
 	client.SetActivities(store.Get().Activities)
 	client.SetPRSizeThresholds(store.Get().PRSizeSmallMax, store.Get().PRSizeMediumMax)
 
-	router := api.NewRouter(client, store, logger)
+	// Initialize auth middleware
+	authMiddleware := auth.New(localDev, keycloakAuthority)
+
+	router := api.NewRouter(api.RouterConfig{
+		Client:            client,
+		Store:             store,
+		Logger:            logger,
+		AuthMiddleware:    authMiddleware,
+		LocalDev:          localDev,
+		KeycloakPublicURL: keycloakPublicURL,
+	})
 
 	addr := fmt.Sprintf(":%s", port)
 	logger.Info("server starting",

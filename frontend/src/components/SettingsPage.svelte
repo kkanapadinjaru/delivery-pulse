@@ -1,5 +1,6 @@
 <script>
   import { createEventDispatcher, onMount } from 'svelte';
+  import { getAuthHeaders } from '../api.js';
 
   const dispatch = createEventDispatcher();
 
@@ -55,9 +56,9 @@
   onMount(async () => {
     try {
       const [settingsResp, areaPathsResp, allDevsResp] = await Promise.all([
-        fetch('/api/settings'),
-        fetch('/api/areapaths'),
-        fetch('/api/all-developers'),
+        fetch('/api/settings', { headers: getAuthHeaders() }),
+        fetch('/api/areapaths', { headers: getAuthHeaders() }),
+        fetch('/api/all-developers', { headers: getAuthHeaders() }),
       ]);
 
       if (!settingsResp.ok) throw new Error('Failed to load settings');
@@ -175,7 +176,7 @@
     try {
       const resp = await fetch('/api/settings', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           teams: teamsList,
           developers: selectedDevelopers,
