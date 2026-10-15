@@ -302,6 +302,14 @@
           <td>Priority 2</td>
           {#each reports as r}<td>{r.priority2Count}</td>{/each}
         </tr>
+        <tr>
+          <td>Priority 3</td>
+          {#each reports as r}<td>{r.priority3Count ?? 0}</td>{/each}
+        </tr>
+        <tr>
+          <td>Priority 4</td>
+          {#each reports as r}<td>{r.priority4Count ?? 0}</td>{/each}
+        </tr>
         {#if allTypes.length > 0}
         <tr class="section-break">
           <td colspan="{reports.length + 1}" class="section-header">By Work Item Type</td>

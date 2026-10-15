@@ -49,6 +49,14 @@
       <span class="card-value">{report.priority2Count}</span>
       <span class="card-label">Priority 2</span>
     </div>
+    <div class="card priority">
+      <span class="card-value">{report.priority3Count ?? 0}</span>
+      <span class="card-label">Priority 3</span>
+    </div>
+    <div class="card priority">
+      <span class="card-value">{report.priority4Count ?? 0}</span>
+      <span class="card-label">Priority 4</span>
+    </div>
     <div class="card">
       <span class="card-value">{report.avgResolutionDays?.toFixed(1) || 'N/A'}</span>
       <span class="card-label">Avg Days to Complete</span>
