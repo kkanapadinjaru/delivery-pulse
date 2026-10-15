@@ -152,6 +152,8 @@ type DeveloperReport struct {
 	ReopenRate       float64        `json:"reopenRate"`
 	Priority1Count   int            `json:"priority1Count"`
 	Priority2Count   int            `json:"priority2Count"`
+	Priority3Count   int            `json:"priority3Count"`
+	Priority4Count   int            `json:"priority4Count"`
 	AvgResolutionDays float64       `json:"avgResolutionDays"`
 	SimilarBugs      []SimilarBug   `json:"similarBugs"`
 	WorkItems        []WorkItem     `json:"workItems"`
@@ -443,6 +445,114 @@ func (c *Client) GetDevelopers() ([]string, error) {
 	return developers, nil
 }
 
+// identitiesResponse is the vssps identities API response.
+type identitiesResponse struct {
+	Value []struct {
+		ID                  string   `json:"id"`
+		Descriptor          string   `json:"descriptor"`
+		IsContainer         bool     `json:"isContainer"`
+		Members             []string `json:"members"`
+		ProviderDisplayName string   `json:"providerDisplayName"`
+		Properties          struct {
+			Account struct {
+				Value string `json:"$value"`
+			} `json:"Account"`
+			Mail struct {
+				Value string `json:"$value"`
+			} `json:"Mail"`
+		} `json:"properties"`
+	} `json:"value"`
+}
+
+type groupUser struct {
+	ID         string
+	UniqueName string
+}
+
+// expandGroup resolves a group identity to all individual users, recursing into nested groups.
+// Uses the vssps identities API (direct membership per level).
+func (c *Client) expandGroup(groupID string) ([]groupUser, error) {
+	vsspsURL := strings.Replace(c.orgURL, "://dev.azure.com", "://vssps.dev.azure.com", 1)
+	visited := map[string]bool{}
+	var users []groupUser
+
+	var walk func(id string) error
+	walk = func(id string) error {
+		if visited[id] {
+			return nil
+		}
+		visited[id] = true
+
+		data, err := c.doRequest("GET", fmt.Sprintf("%s/_apis/identities?identityIds=%s&queryMembership=Direct&api-version=7.0", vsspsURL, id), nil)
+		if err != nil {
+			return fmt.Errorf("fetching group %s: %w", id, err)
+		}
+		var group identitiesResponse
+		if err := json.Unmarshal(data, &group); err != nil || len(group.Value) == 0 {
+			return fmt.Errorf("parsing group %s: %v", id, err)
+		}
+		if len(group.Value[0].Members) == 0 {
+			return nil
+		}
+
+		// Resolve descriptors in batches to stay clear of URL length and result caps
+		const batchSize = 20
+		descriptors := group.Value[0].Members
+		resolved := 0
+		for start := 0; start < len(descriptors); start += batchSize {
+			end := min(start+batchSize, len(descriptors))
+			data, err = c.doRequest("GET", fmt.Sprintf("%s/_apis/identities?descriptors=%s&queryMembership=None&api-version=7.0",
+				vsspsURL, strings.Join(descriptors[start:end], ",")), nil)
+			if err != nil {
+				return fmt.Errorf("resolving members of %s: %w", id, err)
+			}
+			var members identitiesResponse
+			if err := json.Unmarshal(data, &members); err != nil {
+				return fmt.Errorf("parsing members of %s: %w", id, err)
+			}
+			resolved += len(members.Value)
+			for _, m := range members.Value {
+				if m.IsContainer {
+					if err := walk(m.ID); err != nil {
+						c.logger.Warn("nested group expansion failed", "group", m.ProviderDisplayName, "error", err)
+					}
+					continue
+				}
+				name := m.Properties.Account.Value
+				if name == "" {
+					name = m.Properties.Mail.Value
+					if name != "" {
+						c.logger.Info("group member has no account property, using mail",
+							"id", m.ID,
+							"displayName", m.ProviderDisplayName,
+							"mail", name,
+						)
+					}
+				}
+				if name == "" {
+					c.logger.Warn("group member skipped: no account or mail",
+						"id", m.ID,
+						"displayName", m.ProviderDisplayName,
+						"descriptor", m.Descriptor,
+					)
+					continue
+				}
+				users = append(users, groupUser{ID: m.ID, UniqueName: name})
+			}
+		}
+		if resolved != len(descriptors) {
+			c.logger.Warn("group member descriptors not fully resolved",
+				"group", id, "descriptors", len(descriptors), "resolved", resolved)
+		}
+		return nil
+	}
+
+	if err := walk(groupID); err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
 // fetchDevelopersFromAPI queries the ADO API for team members.
 func (c *Client) fetchDevelopersFromAPI() ([]string, error) {
 	// Get all teams in the project
@@ -490,8 +600,20 @@ func (c *Client) fetchDevelopersFromAPI() ([]string, error) {
 		}
 
 		for _, m := range members.Value {
-			// Skip groups (containers) — only include individual users
+			// Groups (e.g. AM-Developers) are expanded to their individual users
 			if m.Identity.IsContainer {
+				users, err := c.expandGroup(m.Identity.ID)
+				if err != nil {
+					c.logger.Warn("expanding group members failed",
+						"group", m.Identity.DisplayName,
+						"error", err,
+					)
+					continue
+				}
+				for _, u := range users {
+					developers[u.UniqueName] = true
+					c.developerIDs[strings.ToLower(u.UniqueName)] = u.ID
+				}
 				continue
 			}
 			if m.Identity.UniqueName != "" {
@@ -538,6 +660,10 @@ func (c *Client) GetDeveloperReport(developer, from, to string) (*DeveloperRepor
 			report.Priority1Count++
 		case 2:
 			report.Priority2Count++
+		case 3:
+			report.Priority3Count++
+		case 4:
+			report.Priority4Count++
 		}
 
 		// A bug is considered "fixed" by the developer when they reassigned it away
