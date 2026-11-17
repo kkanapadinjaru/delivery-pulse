@@ -1,0 +1,150 @@
+On my day job, I work on an enterprise application.
+
+My Skillset: dotnet, gRPC, K8s, Sql Server, React
+
+Application: Asset Management software that allows you to manage CLOs - CLO constructs (portfolio, issues, issuers, transactions, purchase lots, trades, ratings and so on) and also run compliance rules on them (compliance modeling - IC, OC, recovery rate, principal balance, waterfall and so on) and an compliance execution engine (snapshots the portfolio info and runs the compliance tests and calculations on them). The current app is a 20 year old classic asp + sql server stored procedures mooith. The application is complex and the underlying business domain is also pretty complex. 
+
+What we are doing: 
+MOdernizing the tech stack of the product
+- ReactJS micro front ends
+- dotnet gRPC services
+- observability using prometheus,OTEL, Jaeger tracing grafana, structured logs in loki
+- Auth using Keycloak oAuth
+- NATs message broker and another home grown streaming gRPC service for transactionalliy consistent event propagation.
+- Consul for service registration and discovery
+- Deployment - containerized workloads in K8s using helm charts,
+
+As part of these, we have some common c# libraries, that wire up our dotnet gRPC, and other common components required. There's a common umbrella helm chart for some of these common components like ngix based gRPC load balancer, gateway, consul, otel components etc. And a few other other dotnet services for managing multi-tenancy etc.
+As for the asset management product, we originally decided to break up the monolith into several smaller gRPC dotnet services
+- domaindata  - all the application setup and common shared data required for the compliance and portfolio features (think of calendars, user defined data, lookups, ratings, index history etc.)
+- compliance modeling - all the compliance rules setup
+- compliance snapshots - the service that creates snapshot of portfolio data and runs the rules.
+- portfolio services - We have not fully designed these yet - but thinking of 3 separate parts - transactions, instrument setup, organizations setup
+
+The original idea of splitting to the services was borne out of performance and maintenance. In the legacy app, since all the data reside in the same database, when a compliance engine (a bunch of stored procedures in sql server runs), it's a huge amount of compute on large sets of data and makes the rest of the app unusable since the db server is fully used up. The idea of creating smaller gRPC services means each service can own its database, and serve up the data which then makes it a deployment decision on what servers the individual databases go to. We can configure such that the snapshots service gets a database provisioned in a different database server, portfolio transactions can be its own and the rest of the services can all be in 1 place etc. But this also adds another challenge - how do we transport all these data into the snapshots database when we ceate a snapshot object (point in time snapshot of all the portfolio and modeling information required by engine).
+So, nothing is set in stone here.
+
+The problem:
+The developers working on the modernization project do not understand the existing product in detail. First of all, the CLO domain is highly complicated with technical jargons, and many diffrent business rules and scenarios. Second, since almost all of the logic are embedded in stored procedures and a little on a very old classic ASP codebase which most modern developers do not comprehend well, the progress of modernizing is slow. Architecture and design decisions are difficult.
+
+The solution idea:
+We already have a huge git repo codebase of classic ASP files and stored procedures for the legacy app with the entire product built out. We have some knowdlge base documents, certain markdown files, and probably a couple of indenture pdf documents that we have a starting point.
+We also have the git repos for the modernized parts including the common components.
+
+Is there a way to leverage all the knowledge and product implementation sitting in the form of code (asp + sql server code) through a AI model or something that can then be exposed like a chat bot to the modernization developer? So, when they are working on a particular feature - say facility, they can ask questions like what's a facility, how does it related to some thign else? Or what does it mean to maintain a facility..(I am just making up questions here.. there would be more meaingful ones to ask that help the engineer understand the high level concept..and also get into specifics )
+Basically a RAG with our CLO AssetManagement product knowledge and our codebase (both legacy and modern so far)
+
+Goal:
+- A developer should be able to use this to ask questions to understand product business, ask specifics of certain code, where a particular functionality resides, what it does, what it means to do certain things, how would she model/design the same in the modernized stack, arcitecture and design questions like - does it make sense to create a separate servce for this? HOw woudl I move data? so on.
+-Would there be a way to integrate such a tool with Claude code or another code assistant to use the knowledge from the above to accelerate code development process?
+
+Expectations and Steps to get to this goal:
+I am not an AI engineer. I have heard terms like RAG, tools like Langchain, LlamaIndex, HayStack, Langgraph etc. But know nothing of that. I am not sure if the above requires any of these tools at all. And if we do not have to use huge AI coding frameworks for accomplishing this, we do not have to. If Python/dotnet/go can work, we are fine. We will be taking smaller steps towards the goal, at the same time, the ultimate goal is to being able to produce an AI tool that is like a CLO Asset Manager product SME, a lead engineer capable of producing modern scalable architecture, design and code able to review the code etc. And integrating with existing coding assistants (we use claude code in our company) to accelerate modernizing with specifics of our app.
+
+I asked a fellow developer who has a little experience working on some small scale AI projects before
+and she suggested some things like these
+
+---
+The important part: code-aware parsing
+design the ingestion process independently of the RAG framework.
+For example:
+Git repository
+Checkout / branch / commit
+File discovery and filtering
+.asp · .aspx · .cs · .sql · .config
+Language-specific parsers
+AST / syntax tree / symbol extraction
+Semantic chunking
+Functions · procedures · classes · SQL blocks
+LlamaIndex ingestion pipeline
+Metadata · embeddings · caching
+Vector + keyword index
+Hybrid retrieval
+For parsing, consider:
+- Tree-sitter: A good starting point for syntax-aware parsing across multiple languages.
+- Microsoft Roslyn: If you also have C# and ASP.NET code. It provides much richer C# semantic information than generic text splitting.
+- SQLGlot: Useful for parsing SQL and extracting SQL structure. Check its T-SQL dialect support against your actual SQL Server syntax.
+- ANTLR: Worth considering if you need custom grammar support, particularly for legacy ASP/VBScript.
+One caveat: classic ASP (.asp with VBScript/JScript embedded in HTML) is different from ASP.NET (.aspx). You shouldn't assume a C# parser or generic HTML parser will correctly understand classic ASP.
+3. chunk the code - invest most of the engineering effort.
+Avoid fixed-size chunks such as 500 tokens with 50-token overlap. Instead, use semantic boundaries.
+For SQL:
+- One stored procedure per logical chunk.
+- Individual functions.
+- Views and triggers.
+- Table definitions where useful.
+- Preserve comments and relevant SQL dependencies.
+For ASP / ASP.NET:
+- Individual functions and subroutines.
+- Page lifecycle handlers.
+- Event handlers.
+- Business logic blocks.
+- SQL queries embedded in the pages.
+For every chunk, I'd attach metadata:
+{
+  "repository": "PortfolioManager",
+  "branch": "main",
+  "commit": "abc123",
+  "file": "Database/Compliance.sql",
+  "language": "sql",
+  "symbol": "CalculateCompliance",
+  "symbol_type": "stored_procedure",
+  "start_line": 120,
+  "end_line": 245
+}
+preserve relationships:
+- Which procedures call other procedures?
+- Which tables does a procedure read or modify?
+- Which ASP page invokes a particular stored procedure?
+- Which functions are referenced by other functions?
+This eventually allows you to build something more useful than simple vector search: a lightweight code knowledge graph.
+4. Retrieval: don't use vector search alone
+For source code, I'd combine:
+1. Vector search: Find conceptually related code.
+2. Keyword/BM25 search: Find exact identifiers, table names, procedure names and variables.
+3. Relationship expansion: Retrieve callers, callees and related SQL objects.
+4. Reranking: Improve the relevance of retrieved chunks.
+For example, someone might ask:
+"Where is the calculation of the portfolio's weighted average spread performed?"
+Vector search can find conceptually related logic, but keyword search might find the actual column names or stored procedures. Relationship expansion can then identify the calling ASP page.
+That combination is considerably more useful than pure vector RAG.
+5. My recommended technology stack
+
+Ingestion orchestration - Python
+RAG framework - LlamaIndex
+Code parsing - Tree-sitter
+C# parsing (if applicable) - Roslyn
+SQL parsing - SQLGlot / T-SQL parser
+Embeddings - Your chosen embedding model (Huggingface or similar)
+Vector database -Qdrant or PostgreSQL + pgvector
+Keyword search - PostgreSQL full-text or Elasticsearch
+
+Keep the parser and chunking implementation independent of LlamaIndex. Tlexibility to switch frameworks without rewriting code understanding layer.
+6. One additional consideration: incremental indexing
+Since the source is in Git, use Git as the source of truth.
+You don't want to reprocess the entire repository whenever someone pushes a change.
+Track:
+- Commit SHA
+- File hash
+- Chunk ID
+- Symbol name
+- Parser version
+- Embedding model/version
+On a new commit:
+- Identify changed files.
+- Reparse those files.
+- Replace their old chunks.
+- Remove chunks belonging to deleted files.
+- Leave unchanged files alone.
+LlamaIndex's ingestion pipeline has caching and document tracking mechanisms that can help here. 
+LlamaIndex Python Documentation+1
+
+Final recommendation
+My pick
+ LlamaIndex + Tree-sitter + custom semantic chunking.
+
+---
+Much of the above recommendation does not make sense to me since these are all probably AI engineer parlance. What I know is what I want to achieve from this project and am willing to take small steps to build this towards the final goal - preferably where after first few steps I am able to review the results and decide whether it's going in the right direction. What I don't want to end up doing is to design the project incorrectly by starting it as a pet project and then as things start coming up, having to change the architecture to scale better or for enhancing the functionality (that's why I mentioned all the goals above) so we can do it in incremental steps slowly building up the capabilities. We can always connect to a LLM using APIs in this process if it's needed for the heavy-lifting  where we enrich the context and create the prompt for the LLM
+
+I want your help in reviewing the above, confirming/pointing out the pitfalls or flaws/recommending the correct- engineering steps above, recommending a high level language (Python/dotnet - I am assuming python since it has better libs for AI workloads?), a project structure for the same where I can open it on VSCode and start building on it, a deployment model (do we need a UI eventually which is like a chatbot interface or is it pure backend work? do we deploy the entire workload in containers, do we need k8s for this etc)
+
